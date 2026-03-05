@@ -1,0 +1,205 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StatusBadge } from '../components/StatusBadge';
+import { 
+    Cpu, 
+    HardDrive, 
+    Wifi, 
+    Zap, 
+    Activity,
+    Server,
+    ShieldCheck,
+    AlertCircle,
+    Thermometer
+} from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+
+export default function SystemStatusPage() {
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setIsLoading(false), 800);
+        return () => clearTimeout(timer);
+    }, []);
+
+    const DEVICE_NODES = [
+        { id: 'NODE-01', type: 'Gateway', status: 'Online', uptime: '14d 2h', temp: '42°C', health: 98 },
+        { id: 'NODE-02', type: 'Sensor Array', status: 'Online', uptime: '8d 5h', temp: '38°C', health: 100 },
+        { id: 'NODE-03', type: 'AI Edge Proc', status: 'Degraded', uptime: '22h 12m', temp: '58°C', health: 76 },
+        { id: 'NODE-04', type: 'Storage Unit', status: 'Online', uptime: '45d 1h', temp: '35°C', health: 94 },
+    ];
+
+    const SkeletonNode = () => (
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-4 w-12" />
+            </div>
+            <div className="space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+            </div>
+            <div className="pt-4 border-t border-slate-50 dark:border-slate-800">
+                <Skeleton className="h-2 w-full rounded-full" />
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="space-y-8 max-w-[1600px] mx-auto pb-8">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Core Infrastructure Status</h1>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Real-time health diagnostics for edge nodes and central servers.</p>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-2 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">Global Systems Nominal</span>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {isLoading ? (
+                    Array(4).fill(0).map((_, i) => <Skeleton className="h-32 w-full rounded-2xl" key={i} />)
+                ) : (
+                    <>
+                        <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="p-3 bg-brand-red/5 rounded-2xl text-brand-red">
+                                <Cpu className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Global CPU Load</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">12.4%</p>
+                            </div>
+                        </div>
+                        <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="p-3 bg-brand-orange/5 rounded-2xl text-brand-orange">
+                                <HardDrive className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Storage Array</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">64.1%</p>
+                            </div>
+                        </div>
+                        <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="p-3 bg-blue-500/5 rounded-2xl text-blue-500">
+                                <Wifi className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Network Latency</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">12ms</p>
+                            </div>
+                        </div>
+                        <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
+                            <div className="p-3 bg-emerald-500/5 rounded-2xl text-emerald-500">
+                                <Zap className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Energy Grid</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">Optimal</p>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-2 space-y-4">
+                    <h2 className="text-xl font-black text-slate-800 dark:text-white tracking-tight uppercase tracking-wider">Active Compute Nodes</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {isLoading ? (
+                            Array(4).fill(0).map((_, i) => <SkeletonNode key={i} />)
+                        ) : (
+                            DEVICE_NODES.map((node, index) => (
+                                <motion.div 
+                                    key={node.id}
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ delay: index * 0.1 }}
+                                    className="p-6 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[28px] shadow-sm hover:shadow-xl transition-all group"
+                                >
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                                                <Server className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-800 dark:text-slate-200">{node.id}</h3>
+                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{node.type}</p>
+                                            </div>
+                                        </div>
+                                        <StatusBadge status={node.status} />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Uptime</span>
+                                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{node.uptime}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Thermals</span>
+                                            <span className={cn(
+                                                "text-xs font-bold",
+                                                parseInt(node.temp) > 50 ? "text-brand-orange" : "text-emerald-500"
+                                            )}>{node.temp}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                                            <span className="text-slate-400">Heuristic Health</span>
+                                            <span className={cn(
+                                                node.health < 80 ? "text-brand-red" : "text-emerald-500"
+                                            )}>{node.health}%</span>
+                                        </div>
+                                        <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <motion.div 
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${node.health}%` }}
+                                                className={cn(
+                                                    "h-full rounded-full",
+                                                    node.health < 80 ? "bg-brand-red" : "bg-emerald-500"
+                                                )}
+                                            />
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                <div className="space-y-4">
+                    <h2 className="text-xl font-black text-slate-800 dark:text-white tracking-tight uppercase tracking-wider">Security Logs</h2>
+                    <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[32px] overflow-hidden">
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {[1, 2, 3, 4, 5].map((i) => (
+                                <div key={i} className="p-4 flex gap-4 items-start hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                                    <div className="mt-1">
+                                        {i % 3 === 0 ? (
+                                            <AlertCircle className="w-4 h-4 text-brand-red" />
+                                        ) : (
+                                            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                            {i % 3 === 0 ? 'Anomaly detected on NODE-03' : 'Security scan completed'}
+                                        </p>
+                                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                            {i * 12} MINUTES AGO
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

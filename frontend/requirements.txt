@@ -1,0 +1,39 @@
+# SafeDrive 2.0 - Frontend Requirements
+
+## Core dependencies
+next == 16.1.2
+react == 19.2.3
+react-dom == 19.2.3
+typescript == 5.x
+
+## UI & Styling
+tailwindcss == 4.x
+framer-motion == 12.26.2
+lucide-react == 0.562.0
+shadcn-ui == 0.9.5
+class-variance-authority == 0.7.1
+clsx == 2.1.1
+tailwind-merge == 3.4.0
+
+## Data Visualization & Maps
+recharts == 3.6.0
+leaflet == 1.9.4
+react-leaflet == 5.0.0
+
+## State Management
+zustand == 5.0.10
+
+## UI Components (Radix UI)
+@radix-ui/react-avatar == 1.1.11
+@radix-ui/react-dialog == 1.1.15
+@radix-ui/react-dropdown-menu == 2.1.16
+@radix-ui/react-scroll-area == 1.2.10
+@radix-ui/react-slot == 1.2.4
+@radix-ui/react-tabs == 1.1.13
+
+## Dev Dependencies
+eslint == 9.x
+@types/leaflet == 1.9.21
+@types/node == 20.x
+@types/react == 19.x
+@types/react-dom == 19.x

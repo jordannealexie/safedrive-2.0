@@ -1,0 +1,27 @@
+/* frontend/styles/globals.css */
+:root {
+  /* Base neutrals */
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  
+  /* Brand colors */
+  --primary: 3 89% 52%; /* #ED1E24 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 31 91% 54%; /* #F58020 */
+  --secondary-foreground: 0 0% 100%;
+  --accent: 58 90% 53%; /* #F3EB1A */
+  --accent-foreground: 222.2 84% 4.9%;
+  
+  /* Status colors */
+  --success: 142 76% 36%;
+  --warning: 38 92% 50%;
+  --error: 0 84% 60%;
+  
+  /* UI */
+  --border: 214.3 31.8% 91.4%;
+  --radius: 0.5rem;
+}
