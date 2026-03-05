@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
@@ -56,15 +57,23 @@ export function Sidebar() {
                     <div className="flex items-center justify-between h-16 px-4 border-b border-slate-200 dark:border-slate-800">
                         {isSidebarOpen ? (
                             <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-lg bg-brand-red flex items-center justify-center shadow-lg shadow-brand-red/20">
-                                    <span className="text-white font-bold">S</span>
-                                </div>
+                                <Image
+                                    src="/images/safedrive-logo.png"
+                                    alt="SafeDrive Logo"
+                                    width={32}
+                                    height={32}
+                                    className="rounded-lg"
+                                />
                                 <span className="text-xl font-bold text-slate-800 dark:text-white tracking-tight">SafeDrive</span>
                             </div>
                         ) : (
-                            <div className="w-8 h-8 rounded-lg bg-brand-red flex items-center justify-center mx-auto shadow-lg shadow-brand-red/20">
-                                <span className="text-white font-bold">S</span>
-                            </div>
+                            <Image
+                                src="/images/safedrive-logo.png"
+                                alt="SafeDrive Logo"
+                                width={32}
+                                height={32}
+                                className="mx-auto rounded-lg"
+                            />
                         )}
                         <Button
                             variant="ghost"

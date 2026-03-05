@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Shield, Lock, User, Info, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Lock, User, Info, AlertTriangle, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 import { useUIStore } from '@/store/useUIStore';
 
@@ -42,16 +43,23 @@ export default function LoginPage() {
                 <div className="text-center mb-10">
                     <motion.div
                         initial={{ scale: 0.8, rotate: -10 }}
-                        animate={{ scale: 1, rotate: 3 }}
+                        animate={{ scale: 1, rotate: 0 }}
                         transition={{
                             type: "spring",
                             stiffness: 260,
                             damping: 20,
                             delay: 0.2
                         }}
-                        className="w-20 h-20 rounded-[28px] bg-brand-red mx-auto flex items-center justify-center shadow-[0_20px_40px_-10px_rgba(237,30,36,0.4)] mb-6"
+                        className="mx-auto mb-6"
                     >
-                        <Shield className="w-10 h-10 text-white" strokeWidth={2.5} />
+                        <Image
+                            src="/images/safedrive-logo.png"
+                            alt="SafeDrive Logo"
+                            width={80}
+                            height={80}
+                            className="mx-auto"
+                            priority
+                        />
                     </motion.div>
                     <motion.h1
                         initial={{ opacity: 0 }}
