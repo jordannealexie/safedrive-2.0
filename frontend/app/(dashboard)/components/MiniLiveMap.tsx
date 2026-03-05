@@ -20,8 +20,8 @@ export default function MiniLiveMap() {
     return (
         <div className="h-full w-full">
             <MapContainer
-                center={[23.8103, 90.4125]} 
-                zoom={11}
+                center={[14.5995, 120.9842]} 
+                zoom={12}
                 scrollWheelZoom={false}
                 zoomControl={false}
                 attributionControl={false}

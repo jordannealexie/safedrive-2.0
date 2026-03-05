@@ -1,9 +1,7 @@
 export const DASHBOARD_STATS = [
-  { label: 'Total Active Buses', value: '42', trend: '+12%', icon: 'Bus' },
   { label: 'Total Active Drivers', value: '38', trend: '+5%', icon: 'Users' },
   { label: 'Drowsy Today', value: '4', trend: '-25%', icon: 'UserX', color: 'text-brand-red' },
   { label: 'Alerts Today', value: '12', trend: '+8%', icon: 'AlertTriangle' },
-  { label: 'Systems Online', value: '98%', trend: 'Stable', icon: 'Cpu' },
 ];
 
 export const DROWSINESS_INCIDENTS = [
@@ -60,7 +58,7 @@ export const MOCK_ALERTS = [
     id: 'ALT001',
     type: 'Drowsiness Detected',
     driver: 'Jane Smith',
-    bus: 'BUS-205',
+    bus: 'DRV002',
     timestamp: '2026-01-16 14:30',
     location: 'Highway 10, Sector 4',
     status: 'Acknowledged',
@@ -68,25 +66,25 @@ export const MOCK_ALERTS = [
   },
   {
     id: 'ALT002',
-    type: 'Device Offline',
-    driver: 'N/A',
-    bus: 'BUS-404',
+    type: 'Deviation from Baseline',
+    driver: 'John Doe',
+    bus: 'DRV001',
     timestamp: '2026-01-16 13:15',
-    location: 'Depot A',
+    location: 'Route 8A, KM 12',
     status: 'Resolved',
     severity: 'Medium',
   },
 ];
 
 export const BUSES = [
-  { id: 'BUS-102', driver: 'John Doe', status: 'Online', battery: '85%', speed: '65 km/h', location: [23.8103, 90.4125] },
-  { id: 'BUS-205', driver: 'Jane Smith', status: 'Online', battery: '42%', speed: '72 km/h', location: [23.8203, 90.4225] },
-  { id: 'BUS-310', driver: 'Michael Brown', status: 'Offline', battery: '0%', speed: '0 km/h', location: [23.8303, 90.4325] },
+  { id: 'BUS-102', driver: 'John Doe', status: 'Online', battery: '85%', speed: '65 km/h', location: [14.5995, 120.9842] },
+  { id: 'BUS-205', driver: 'Jane Smith', status: 'Online', battery: '42%', speed: '72 km/h', location: [14.6091, 121.0223] },
+  { id: 'BUS-310', driver: 'Michael Brown', status: 'Offline', battery: '0%', speed: '0 km/h', location: [14.5678, 120.9432] },
 ];
 
 export const RECENT_ALERTS = [
-  { id: 'ALT001', type: 'Drowsiness Detected', driver: 'Jane Smith', bus: 'BUS-205', time: '5m ago', status: 'Active' },
-  { id: 'ALT002', type: 'Hard Braking', driver: 'John Doe', bus: 'BUS-102', time: '12m ago', status: 'Acknowledged' },
-  { id: 'ALT003', type: 'Overspeeding', driver: 'Michael Brown', bus: 'BUS-310', time: '25m ago', status: 'Active' },
-  { id: 'ALT004', type: 'Drowsiness Detected', driver: 'Jane Smith', bus: 'BUS-205', time: '38m ago', status: 'Resolved' },
+  { id: 'ALT001', type: 'Drowsiness Detected', driver: 'Jane Smith', time: '5m ago', status: 'Active' },
+  { id: 'ALT002', type: 'Baseline Deviation', driver: 'John Doe', time: '12m ago', status: 'Acknowledged' },
+  { id: 'ALT003', type: 'Continuous Drowsiness', driver: 'Michael Brown', time: '25m ago', status: 'Active' },
+  { id: 'ALT004', type: 'Drowsiness Detected', driver: 'Jane Smith', time: '38m ago', status: 'Resolved' },
 ];

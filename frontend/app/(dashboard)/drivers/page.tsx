@@ -34,7 +34,6 @@ export default function DriversPage() {
                 </div>
             </td>
             <td className="px-6 py-4"><Skeleton className="h-4 w-16" /></td>
-            <td className="px-6 py-4"><Skeleton className="h-6 w-12" /></td>
             <td className="px-6 py-4"><Skeleton className="h-6 w-20" /></td>
             <td className="px-6 py-4"><Skeleton className="h-4 w-12" /></td>
             <td className="px-6 py-4"><Skeleton className="h-4 w-16" /></td>
@@ -76,7 +75,6 @@ export default function DriversPage() {
                             <tr>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Operator</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Internal ID</th>
-                                <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Node/Bus</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Live Status</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Last Telemetry</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Risk Matrix</th>
@@ -104,11 +102,6 @@ export default function DriversPage() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-bold text-xs">{driver.id}</td>
-                                        <td className="px-6 py-4">
-                                            <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded font-mono text-[10px] font-black text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                                {driver.busId}
-                                            </span>
-                                        </td>
                                         <td className="px-6 py-4">
                                             <StatusBadge status={driver.status} />
                                         </td>

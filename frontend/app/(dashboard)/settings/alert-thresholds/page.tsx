@@ -31,7 +31,7 @@ export default function AlertThresholdsPage() {
                         <div className="flex items-center justify-between">
                             <div className="space-y-1">
                                 <p className="font-bold text-slate-800 dark:text-slate-200">Drowsiness Confidence</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Minimum AI confidence score (0-100) to trigger an incident.</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Minimum score from facial landmark analysis to trigger alert.</p>
                             </div>
                             <div className="flex items-center gap-3">
                                 <Input type="number" defaultValue="75" className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
@@ -42,11 +42,34 @@ export default function AlertThresholdsPage() {
                         <div className="flex items-center justify-between">
                             <div className="space-y-1">
                                 <p className="font-bold text-slate-800 dark:text-slate-200">Continuous Drowsiness Duration</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Consecutive seconds of detected drowsiness before alerting.</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Consecutive seconds of drowsiness before escalating to buzzer/OLED alarm.</p>
                             </div>
                             <div className="flex items-center gap-3">
                                 <Input type="number" defaultValue="3" className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
                                 <span className="text-sm font-bold text-slate-400">Sec</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                                <p className="font-bold text-slate-800 dark:text-slate-200">Baseline Deviation Threshold</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">% deviation from session baseline behavior before flagging anomaly.</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <Input type="number" defaultValue="30" className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
+                                <span className="text-sm font-bold text-slate-400">%</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                                <p className="font-bold text-slate-800 dark:text-slate-200">Motion Requirement (MPU-6050)</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Only trigger alarms when accelerometer confirms vehicle is moving.</p>
+                            </div>
+                            <div className="w-12 h-6 bg-brand-red rounded-full relative cursor-pointer shadow-inner">
+                                <div className="w-5 h-5 bg-white rounded-full absolute right-0.5 top-0.5 shadow-md flex items-center justify-center">
+                                    <span className="text-[6px] font-black text-brand-red">ON</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -67,7 +90,7 @@ export default function AlertThresholdsPage() {
                                 <Badge className="bg-brand-yellow text-slate-900 font-black h-5 text-[10px] uppercase">Level 1: Warning</Badge>
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right leading-none">Standard Protocol</span>
                             </div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">Triggered immediately upon threshold breach. Activates dashboard alert and logs incident.</p>
+                            <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">Triggered upon initial drowsiness detection. OLED displays visual warning and dashboard logs the event.</p>
                         </div>
 
                         <div className="p-6 rounded-2xl bg-brand-red/5 dark:bg-brand-red/10 border border-brand-red/10 space-y-4">
@@ -75,7 +98,7 @@ export default function AlertThresholdsPage() {
                                 <Badge className="bg-brand-red text-white font-black h-5 text-[10px] uppercase">Level 2: Critical</Badge>
                                 <span className="text-[10px] font-bold text-brand-red/60 uppercase tracking-widest text-right leading-none">Emergency Protocol</span>
                             </div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300 font-medium text-brand-red/90 dark:text-brand-red/80">Triggered if drowsiness persists for &gt;10s. Activates vehicle buzzer and emergency contact.</p>
+                            <p className="text-sm text-slate-600 dark:text-slate-300 font-medium text-brand-red/90 dark:text-brand-red/80">Triggered if drowsiness persists beyond threshold. Activates buzzer alarm and OLED alert. Only triggers when MPU-6050 confirms vehicle is in motion.</p>
                         </div>
                     </div>
                 </CardContent>

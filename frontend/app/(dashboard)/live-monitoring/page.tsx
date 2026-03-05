@@ -17,9 +17,9 @@ const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { 
 const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), { ssr: false }) as any;
 
 const MOCK_LOCATIONS = [
-    { id: 'BUS-102', lat: 14.5995, lng: 120.9842, driver: 'John Doe', status: 'Normal', speed: '45 km/h', lastAlert: 'None' },
-    { id: 'BUS-205', lat: 14.6091, lng: 121.0223, driver: 'Jane Smith', status: 'Drowsy', speed: '62 km/h', lastAlert: '5m ago' },
-    { id: 'BUS-310', lat: 14.5678, lng: 120.9432, driver: 'Michael Brown', status: 'Stationary', speed: '0 km/h', lastAlert: 'N/A' },
+    { id: 'DRV001', lat: 14.5995, lng: 120.9842, driver: 'John Doe', status: 'Normal', speed: '45 km/h', lastAlert: 'None', session: 'SES-003' },
+    { id: 'DRV002', lat: 14.6091, lng: 121.0223, driver: 'Jane Smith', status: 'Drowsy', speed: '62 km/h', lastAlert: '5m ago', session: 'SES-007' },
+    { id: 'DRV003', lat: 14.5678, lng: 120.9432, driver: 'Michael Brown', status: 'Stationary', speed: '0 km/h', lastAlert: 'N/A', session: 'SES-012' },
 ];
 
 export default function LiveMonitoringPage() {
@@ -49,7 +49,7 @@ export default function LiveMonitoringPage() {
                 <div className="flex gap-4">
                     <div className="relative w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
-                        <Input placeholder="Search active bus..." className="pl-10 h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:text-white shadow-sm" />
+                        <Input placeholder="Search active driver..." className="pl-10 h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:text-white shadow-sm" />
                     </div>
                     <Button className="bg-brand-red hover:bg-brand-red/90 h-11 px-6 shadow-lg shadow-brand-red/20 font-bold text-white">Refresh Map</Button>
                 </div>
@@ -94,7 +94,7 @@ export default function LiveMonitoringPage() {
                         <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur p-4 rounded-2xl shadow-xl border border-white/50 dark:border-slate-800 space-y-3">
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Normal (2)</span>
+                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Normal (1)</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
@@ -102,7 +102,7 @@ export default function LiveMonitoringPage() {
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
-                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Stationary (1)</span>
+                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Not Moving (1)</span>
                             </div>
                         </div>
                     </div>
@@ -139,7 +139,7 @@ export default function LiveMonitoringPage() {
                                 <CardContent className="space-y-6">
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                            <span className="text-slate-400 font-bold text-xs uppercase tracking-wider">Assigned Driver</span>
+                                            <span className="text-slate-400 font-bold text-xs uppercase tracking-wider">Driver</span>
                                             <span className="font-bold text-slate-800 dark:text-white">{selectedBus.driver}</span>
                                         </div>
 
@@ -171,7 +171,7 @@ export default function LiveMonitoringPage() {
                     ) : (
                         <div className="w-96 flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm">
                             <Navigation className="w-12 h-12 mb-4 opacity-20" />
-                            <p className="text-center font-medium px-12 italic">Select a bus on the map to view real-time telemetry.</p>
+                            <p className="text-center font-medium px-12 italic">Select a driver on the map to view real-time session data.</p>
                         </div>
                     )}
                 </AnimatePresence>

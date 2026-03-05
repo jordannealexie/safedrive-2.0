@@ -17,39 +17,43 @@ const FAQ_DATA = [
         questions: [
             {
                 q: "What is SafeDrive 2.0?",
-                a: "SafeDrive 2.0 is an advanced AI-powered driver drowsiness detection and management system. It uses computer vision and real-time monitoring to ensure operational safety."
+                a: "SafeDrive 2.0 is an AI-powered drowsiness detection system that uses facial landmark analysis and eye/mouth behavior monitoring to prevent accidents. It features session-based monitoring, face-based driver differentiation, and work hour tracking."
             },
             {
-                q: "How do I add a new bus to the fleet?",
-                a: "Navigate to the 'Buses' page and click on 'Add Vehicle'. You will need to provide the VIN and the Serial Number of the SafeDrive hardware node installed."
+                q: "How does driver identification work?",
+                a: "The system uses face-based driver differentiation. When a new face is detected by the camera, a driver profile ID is automatically created. No pre-registration is required — drivers are recognized and tracked automatically."
             }
         ]
     },
     {
-        category: 'Alerts & Safety',
+        category: 'Detection & Alerts',
         icon: Shield,
         questions: [
             {
-                q: "What types of alerts are tracked?",
-                a: "The system tracks Drowsiness, Distraction, Overspeeding, and Hardware Failures. High-severity alerts trigger an immediate notification to the dashboard and an optional buzzer on the vehicle."
+                q: "How does drowsiness detection work?",
+                a: "The camera module analyzes facial landmarks in real-time, monitoring eye closure duration and mouth behavior. Each driving session learns a behavioral baseline, and deviations from that baseline trigger alerts."
             },
             {
-                q: "How does the drowsiness detection work?",
-                a: "The edge node analyzes facial landmarks in real-time. It monitors eye closure duration (PERCLOS) and yawning frequency to calculate a risk score."
+                q: "When does the alarm sound?",
+                a: "The buzzer and OLED display activate only when the MPU-6050 accelerometer confirms the vehicle is in motion. If the vehicle is stationary, visual alerts are shown on the dashboard but the buzzer will not sound."
+            },
+            {
+                q: "What are the work hour reminders?",
+                a: "The system aggregates all driving sessions throughout the day for each driver. Visual reminders are produced at 4-hour, 6-hour, and 8-hour thresholds to encourage rest breaks and comply with fatigue regulations."
             }
         ]
     },
     {
-        category: 'Technical Support',
+        category: 'Hardware & Sensors',
         icon: Settings,
         questions: [
             {
-                q: "A device is showing as 'Offline', what should I do?",
-                a: "Check the 'System Status' page to see if the gateway is online. If only one node is offline, it may be a power or network connectivity issue on the vehicle. Try restarting the node."
+                q: "What sensors does the system use?",
+                a: "The edge device includes: NEO-6M GPS module for location tracking, MPU-6050 accelerometer to determine vehicle motion, a camera for facial analysis, buzzer for audio alarms, and an OLED display for visual notifications. A DC-DC buck converter handles power regulation."
             },
             {
-                q: "Can I export historical data?",
-                a: "Yes, you can export reports and alert logs in PDF or CSV format from the 'Reports' and 'Alerts' pages respectively."
+                q: "What does session-based monitoring mean?",
+                a: "Each driving instance is treated as a unique session with its own ID and timestamps. Behavioral baselines are learned per session and reset when a new session starts. This supports drivers who drive intermittently, swap shifts, or operate without pre-registration."
             }
         ]
     }
@@ -103,21 +107,6 @@ export default function FAQPage() {
                 ))}
             </div>
 
-            <div className="mt-16 p-8 bg-slate-900 dark:bg-black rounded-[40px] text-center space-y-6 relative overflow-hidden group">
-                <div className="absolute top-[-50px] left-[-50px] w-64 h-64 bg-brand-red/10 blur-[100px]" />
-                <div className="relative z-10">
-                    <h3 className="text-2xl font-black text-white">Still need assistance?</h3>
-                    <p className="text-slate-400 font-medium max-w-md mx-auto">Our security team is available 24/7 for critical hardware intervention.</p>
-                    <div className="flex flex-wrap justify-center gap-4 mt-8">
-                        <Button className="bg-brand-red hover:bg-brand-red/90 text-white px-8 h-12 rounded-2xl font-bold shadow-xl shadow-brand-red/20">
-                            Open Support Ticket
-                        </Button>
-                        <Button variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800 h-12 px-8 rounded-2xl font-bold">
-                            Live Chat
-                        </Button>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }

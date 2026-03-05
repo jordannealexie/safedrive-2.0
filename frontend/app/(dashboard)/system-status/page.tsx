@@ -17,10 +17,12 @@ import {
 import { cn } from "@/lib/utils";
 
 const DEVICES = [
-    { id: 'CAM-01-BUS-102', type: 'Camera', status: 'Online', battery: '98%', firmware: 'v2.1.0', lastSeen: 'Just now' },
-    { id: 'GPS-02-BUS-102', type: 'GPS', status: 'Online', battery: '100%', firmware: 'v1.4.5', lastSeen: 'Just now' },
-    { id: 'CAM-01-BUS-205', type: 'Camera', status: 'Online', battery: '42%', firmware: 'v2.1.0', lastSeen: '2m ago' },
-    { id: 'GPS-01-BUS-404', type: 'GPS', status: 'Offline', battery: '0%', firmware: 'v1.4.2', lastSeen: '4h ago' },
+    { id: 'CAM-01-UNIT-A', type: 'Camera Module', status: 'Online', firmware: 'v2.1.0', lastSeen: 'Just now', detail: 'Facial landmark detection active' },
+    { id: 'NEO6M-01-UNIT-A', type: 'NEO-6M GPS', status: 'Online', firmware: 'v1.4.5', lastSeen: 'Just now', detail: 'Location tracking operational' },
+    { id: 'MPU6050-01-UNIT-A', type: 'MPU-6050 Accelerometer', status: 'Online', firmware: 'v1.2.0', lastSeen: '1m ago', detail: 'Motion detection active' },
+    { id: 'OLED-01-UNIT-A', type: 'OLED Display', status: 'Online', firmware: 'v1.0.3', lastSeen: '1m ago', detail: 'Visual alarm ready' },
+    { id: 'BZR-01-UNIT-A', type: 'Buzzer Module', status: 'Online', firmware: 'v1.0.0', lastSeen: '1m ago', detail: 'Audio alarm standby' },
+    { id: 'NEO6M-02-UNIT-B', type: 'NEO-6M GPS', status: 'Offline', firmware: 'v1.4.2', lastSeen: '4h ago', detail: 'No signal' },
 ];
 
 export default function SystemStatusPage() {
@@ -51,14 +53,18 @@ export default function SystemStatusPage() {
                                                     ? "text-emerald-500 border-emerald-100 dark:border-emerald-500/20"
                                                     : "text-slate-300 dark:text-slate-700 border-slate-100 dark:border-slate-800"
                                             )}>
-                                                {device.type === 'Camera' ? <Smartphone className="w-6 h-6" /> : <Wifi className="w-6 h-6" />}
+                                            {device.type.includes('GPS') ? <Wifi className="w-6 h-6" /> : 
+                                             device.type.includes('Camera') ? <Smartphone className="w-6 h-6" /> :
+                                             device.type.includes('Accelerometer') ? <Activity className="w-6 h-6" /> :
+                                             device.type.includes('OLED') ? <Cpu className="w-6 h-6" /> :
+                                             <Zap className="w-6 h-6" />}
                                             </div>
                                             <div>
                                                 <p className="font-bold text-slate-800 dark:text-slate-200">{device.id}</p>
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <span className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-tight">{device.type}</span>
                                                     <span className="w-1 h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
-                                                    <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">Firmware: {device.firmware}</span>
+                                                    <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">{device.detail}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -89,9 +95,10 @@ export default function SystemStatusPage() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             {[
-                                { label: 'API Gateway', status: 'Operational', latency: '42ms' },
-                                { label: 'Recognition Engine', status: 'Operational', latency: '124ms' },
-                                { label: 'Database Cluster', status: 'Operational', latency: '12ms' },
+                                { label: 'Detection Engine', status: 'Operational', latency: '45ms' },
+                                { label: 'Baseline Learning', status: 'Operational', latency: '82ms' },
+                                { label: 'Session Manager', status: 'Operational', latency: '15ms' },
+                                { label: 'Face Recognition', status: 'Operational', latency: '124ms' },
                             ].map((service) => (
                                 <div key={service.label} className="flex items-center justify-between border-b border-white/10 pb-4 last:border-0 last:pb-0">
                                     <div>

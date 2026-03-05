@@ -46,7 +46,7 @@ export default function DashboardPage() {
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Dashboard</h1>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Safety protocol active and monitoring 42 active units.</p>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Realtime drowsiness detection and session monitoring active.</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Button variant="outline" className="gap-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 dark:text-slate-300">
@@ -61,7 +61,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {DASHBOARD_STATS.map((stat, index) => (
                     <StatCard
                         key={stat.label}
@@ -180,7 +180,6 @@ export default function DashboardPage() {
                                 <thead className="bg-slate-50 dark:bg-slate-800/50">
                                     <tr>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Driver</th>
-                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bus Unit</th>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Incident</th>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Time</th>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Action</th>
@@ -196,9 +195,6 @@ export default function DashboardPage() {
                                                     </div>
                                                     <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{alert.driver}</span>
                                                 </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className="text-xs font-black text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{alert.bus}</span>
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">

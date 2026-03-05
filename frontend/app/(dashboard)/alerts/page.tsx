@@ -57,7 +57,7 @@ export default function AlertsPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Security Protocol Log</h1>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium">Historical trace of all elevated safety incidents and node failures.</p>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">Historical trace of all drowsiness events, baseline deviations, and session alerts.</p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" className="gap-2 border-slate-200 dark:border-slate-800 dark:text-slate-300">
@@ -109,7 +109,7 @@ export default function AlertsPage() {
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row gap-4 justify-between bg-slate-50/30 dark:bg-slate-800/20">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search registry by type, driver, or node ID..." className="pl-10 h-11 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 transition-all rounded-xl" />
+                        <Input placeholder="Search by type, driver, or session ID..." className="pl-10 h-11 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 transition-all rounded-xl" />
                     </div>
                     <div className="flex gap-2">
                         <Button variant="outline" className="gap-2 h-11 px-6 border-slate-200 dark:border-slate-800 dark:text-slate-300 font-bold">
