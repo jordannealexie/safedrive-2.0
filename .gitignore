@@ -36,6 +36,9 @@ backend/env/
 *.egg-info/
 .eggs/
 
+# GitHub agents/config
+.github/
+
 # IDE
 .vscode/
 !.vscode/settings.json
