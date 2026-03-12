@@ -49,6 +49,7 @@ export default function DriverProfilePage() {
     const [notesSaving, setNotesSaving] = useState(false);
     const [notesSaved, setNotesSaved] = useState(false);
     const [notesModalOpen, setNotesModalOpen] = useState(false);
+    const [chartRange, setChartRange] = useState<'week' | 'month'>('week');
 
     useEffect(() => {
         Promise.all([
@@ -70,6 +71,22 @@ export default function DriverProfilePage() {
     }, [driverId]);
 
     const activeSession = driverSessions.find(s => s.status === 'active');
+
+    const monthlyData: IncidentPoint[] = (() => {
+        const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
+        const now = Date.now();
+        return weeks.map((label, i) => {
+            const weekStart = now - (3 - i) * 7 * 24 * 60 * 60 * 1000;
+            const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
+            const count = alerts.filter(a => {
+                const t = new Date(a.timestamp).getTime();
+                return t >= weekStart && t < weekEnd;
+            }).length;
+            return { day: label, incidents: count };
+        });
+    })();
+
+    const chartData = chartRange === 'week' ? drowsinessIncidents : monthlyData;
 
     if (isLoading || !driver) {
         return (
@@ -214,77 +231,6 @@ export default function DriverProfilePage() {
                             </Button>
                         </CardContent>
                     </Card>
-
-                    <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
-                        <CardHeader>
-                            <CardTitle className="text-lg dark:text-white">Active Session</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            {activeSession ? (
-                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border dark:border-slate-700">
-                                    <div className="flex items-start gap-4">
-                                        <Clock className="w-5 h-5 text-brand-orange mt-0.5" />
-                                        <div className="flex-1">
-                                            <p className="font-bold text-slate-800 dark:text-white">{activeSession.id}</p>
-                                            <p className="text-sm text-slate-500 dark:text-slate-400">Started: {activeSession.startTime.split(' ')[1]}</p>
-                                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-tighter">
-                                                {activeSession.baselineStatus === 'learned' ? 'Baseline learned' : activeSession.baselineStatus === 'learning' ? 'Learning baseline...' : 'Baseline deviation detected'} • {activeSession.duration} elapsed
-                                            </p>
-                                            <div className="flex items-center gap-4 mt-3">
-                                                <div className="flex items-center gap-1">
-                                                    <AlertTriangle className="w-3 h-3 text-brand-orange" />
-                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{activeSession.alertCount} alerts</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <EyeOff className="w-3 h-3 text-brand-red" />
-                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{activeSession.drowsinessEvents} drowsy</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <p className="text-sm text-slate-500 dark:text-slate-400 italic">No active session</p>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
-                        <CardHeader>
-                            <CardTitle className="text-lg dark:text-white">Work Hours Today</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total driving time</span>
-                                <span className="font-bold text-slate-800 dark:text-white">{workHours ? `${workHours.todayTotal}h` : '0h'}</span>
-                            </div>
-                            <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${(workHours?.todayTotal || 0) >= 8 ? 'bg-brand-red' : (workHours?.todayTotal || 0) >= 4 ? 'bg-brand-orange' : 'bg-emerald-500'}`} style={{ width: `${Math.min(((workHours?.todayTotal || 0) / 8) * 100, 100)}%` }} />
-                            </div>
-                            <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                                <span>0h</span>
-                                <span className={(workHours?.threshold4h) ? 'text-brand-orange' : ''}>4h</span>
-                                <span className={(workHours?.threshold8h) ? 'text-brand-red' : ''}>8h</span>
-                            </div>
-                            {workHours?.reminderActive && (
-                                <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30 mt-2">
-                                    <p className="text-xs font-black text-brand-orange uppercase tracking-tight">Rest reminder active — approaching work hour threshold</p>
-                                </div>
-                            )}
-                            {workHours && workHours.sessions.length > 1 && (
-                                <div className="mt-3 space-y-2">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Today&apos;s Sessions ({workHours.sessions.length})</p>
-                                    {workHours.sessions.map((s, i) => (
-                                        <div key={i} className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                                            <span className="font-medium">{s.start} — {s.active ? 'Ongoing' : s.end}</span>
-                                            <span className="font-bold">{s.duration.toFixed(1)}h</span>
-                                        </div>
-                                    ))}
-                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium italic mt-1">Hours accumulated across intermittent sessions</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
                 </div>
 
                 {/* Right Column: Charts & History */}
@@ -293,17 +239,17 @@ export default function DriverProfilePage() {
                         <CardHeader className="flex flex-row items-center justify-between">
                             <div>
                                 <CardTitle className="text-xl dark:text-white">Drowsiness History</CardTitle>
-                                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">7-day activity trend</p>
+                                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">{chartRange === 'week' ? '7-day activity trend' : '4-week activity trend'}</p>
                             </div>
                             <div className="flex gap-2">
-                                <Button variant="ghost" size="sm" className="font-bold dark:text-white">Week</Button>
-                                <Button variant="ghost" size="sm" className="text-slate-400 dark:text-slate-500">Month</Button>
+                                <Button variant="ghost" size="sm" onClick={() => setChartRange('week')} className={cn("font-bold", chartRange === 'week' ? "dark:text-white" : "text-slate-400 dark:text-slate-500")}>Week</Button>
+                                <Button variant="ghost" size="sm" onClick={() => setChartRange('month')} className={cn("font-bold", chartRange === 'month' ? "dark:text-white" : "text-slate-400 dark:text-slate-500")}>Month</Button>
                             </div>
                         </CardHeader>
                         <CardContent>
                             <div className="h-[300px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={drowsinessIncidents}>
+                                    <LineChart data={chartData}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis
                                             dataKey="day"

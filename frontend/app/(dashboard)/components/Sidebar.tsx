@@ -10,7 +10,6 @@ import {
     Bell,
     BarChart3,
     Activity,
-    Settings,
     HelpCircle,
     Menu,
     ChevronLeft,
@@ -27,7 +26,6 @@ const NAV_ITEMS = [
     { label: 'Alerts', href: '/alerts', icon: Bell },
     { label: 'Reports', href: '/reports', icon: BarChart3 },
     { label: 'System Status', href: '/system-status', icon: Activity },
-    { label: 'Settings', href: '/settings', icon: Settings },
     { label: 'FAQs', href: '/faqs', icon: HelpCircle },
 ];
 

@@ -397,10 +397,27 @@ export const domainApi = {
             const { data } = await supabase.from('drivers').select('*').eq('id', id).single();
             if (!data) throw new Error('Driver not found');
             const { data: sessData } = await supabase.from('sessions').select('*').eq('driver_id', id).order('created_at', { ascending: false });
+            const driverRow = mapDriverRow(data);
+            const sessions = (sessData || []).map(mapSessionRow);
+            const todayTotal = driverRow.todayWorkHours || 0;
             return {
-                driver: mapDriverRow(data),
-                sessions: (sessData || []).map(mapSessionRow),
-                workHours: null,
+                driver: driverRow,
+                sessions,
+                workHours: {
+                    driverId: id,
+                    driver: driverRow.name,
+                    todayTotal,
+                    sessions: sessions.filter(s => s.status === 'active').map(s => ({
+                        start: s.startTime,
+                        end: s.endTime,
+                        duration: todayTotal / Math.max(driverRow.todaySessions, 1),
+                        active: s.status === 'active',
+                    })),
+                    threshold4h: todayTotal >= 4,
+                    threshold8h: todayTotal >= 8,
+                    reminderActive: todayTotal >= 6,
+                    weeklyHours: [0, 0, 0, 0, 0, 0, 0],
+                },
             };
         }
     },
