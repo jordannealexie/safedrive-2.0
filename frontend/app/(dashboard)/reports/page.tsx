@@ -14,7 +14,7 @@ import {
     Activity,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { cn } from '@/lib/utils';
+import { cn, formatTimestamp } from '@/lib/utils';
 import { domainApi } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
@@ -36,13 +36,13 @@ export default function ReportsPage() {
                 setAlerts(a);
                 setTotalAlerts(a.length);
                 setResolvedAlerts(a.filter((x: any) => x.status === 'Resolved').length);
-            }),
-            domainApi.getDrivers().then(d => { setDrivers(d); setDriverCount(d.length); }),
-            domainApi.getSessions().then(s => { setSessions(s); setSessionCount(s.length); }),
+            }).catch(() => {}),
+            domainApi.getDrivers().then(d => { setDrivers(d); setDriverCount(d.length); }).catch(() => {}),
+            domainApi.getSessions().then(s => { setSessions(s); setSessionCount(s.length); }).catch(() => {}),
             supabase.from('reports').select('*').order('generated_at', { ascending: false }).then(({ data }) => {
                 if (data) setReports(data.map((r: any) => ({ id: r.id, name: r.name, date: r.date, rows: r.rows })));
-            }),
-        ]).catch(console.error).finally(() => setIsLoading(false));
+            }).catch(() => {}),
+        ]).finally(() => setIsLoading(false));
     }, []);
 
     const synthesizeReport = async () => {

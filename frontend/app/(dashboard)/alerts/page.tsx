@@ -29,7 +29,7 @@ import {
     EyeOff
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, formatTimestamp } from '@/lib/utils';
 
 export default function AlertsPage() {
     const [isLoading, setIsLoading] = useState(true);
@@ -220,7 +220,7 @@ export default function AlertsPage() {
                                         <td className="px-6 py-4">
                                             <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{alert.sessionId}</span>
                                         </td>
-                                        <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-bold text-xs">{alert.timestamp}</td>
+                                        <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-bold text-xs">{formatTimestamp(alert.timestamp)}</td>
                                         <td className="px-6 py-4">
                                             {alert.baselineDeviation > 0 ? (
                                                 <div className="flex items-center gap-1.5">
@@ -276,7 +276,7 @@ export default function AlertsPage() {
                                                         </DropdownMenuItem>
                                                     )}
                                                     <DropdownMenuItem onClick={() => {
-                                                        const detail = `Alert: ${alert.type}\nDriver: ${alert.driver}\nBus: ${alert.bus}\nSeverity: ${alert.severity}\nSession: ${alert.sessionId}\nAlarm: ${alert.alarmType}\nTime: ${alert.timestamp}\nStatus: ${alert.status}`;
+                                                        const detail = `Alert: ${alert.type}\nDriver: ${alert.driver}\nBus: ${alert.bus}\nSeverity: ${alert.severity}\nSession: ${alert.sessionId}\nAlarm: ${alert.alarmType}\nTime: ${formatTimestamp(alert.timestamp)}\nStatus: ${alert.status}`;
                                                         alert.status !== undefined && navigator.clipboard.writeText(detail);
                                                     }}>
                                                         <Eye className="w-4 h-4 mr-2" /> Copy Details

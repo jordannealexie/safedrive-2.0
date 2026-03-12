@@ -2,9 +2,12 @@
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+# Philippine Standard Time (UTC+8)
+PHT = timezone(timedelta(hours=8))
 
 from app.routers.sensors import get_latest_gps, get_latest_accel
 from app.sensors import buzzer_is_active_impl, oled_get_status_impl
@@ -22,7 +25,7 @@ async def websocket_live(websocket: WebSocket):
             oled = oled_get_status_impl()
 
             payload = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(PHT).isoformat(),
                 "gps": {
                     "latitude": gps.latitude,
                     "longitude": gps.longitude,

@@ -1,9 +1,12 @@
 """Sensor API routes — GPS, Accelerometer, Buzzer, OLED."""
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter
+
+# Philippine Standard Time (UTC+8)
+PHT = timezone(timedelta(hours=8))
 
 from app.config import USE_MOCK_SENSORS
 from app.models.schemas import (
@@ -62,7 +65,7 @@ def gps_manual(data: ManualGPSInput):
         altitude=data.altitude,
         speed_kmh=data.speed_kmh,
         fix=True,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(PHT),
     )
     return _latest_gps
 
@@ -85,7 +88,7 @@ def accel_manual(data: ManualAccelInput):
         ax=data.ax, ay=data.ay, az=data.az,
         magnitude=round(mag, 4),
         is_moving=mag > 1.2,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(PHT),
     )
     return _latest_accel
 

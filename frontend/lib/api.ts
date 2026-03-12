@@ -4,15 +4,22 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
-    const res = await fetch(`${API_URL}${path}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options?.headers,
-        },
-    });
-    if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
-    return res.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+        const res = await fetch(`${API_URL}${path}`, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options?.headers,
+            },
+        });
+        if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
+        return res.json();
+    } finally {
+        clearTimeout(timeout);
+    }
 }
 
 /** Fetch with localStorage cache — returns cached data when the API is unreachable. */
@@ -276,6 +283,7 @@ export interface DriverDetail {
     driver: Driver;
     sessions: DriverSession[];
     workHours: WorkHours | null;
+    drowsinessIncidents?: IncidentPoint[];
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +295,7 @@ function mapDriverRow(r: Record<string, unknown>): Driver {
         id: r.id as string,
         name: (r.name as string) || (r.id as string),
         busId: (r.bus_id as string) || 'BUS-001',
-        status: (r.status as string) || 'Normal',
+        status: 'Offline',
         lastAlert: (r.last_alert as string) || 'N/A',
         riskLevel: (r.risk_level as string) || 'Low',
         avatar: '',
@@ -296,7 +304,7 @@ function mapDriverRow(r: Record<string, unknown>): Driver {
         totalSessions: (r.total_sessions as number) || 0,
         todayWorkHours: (r.today_work_hours as number) || 0,
         todaySessions: (r.today_sessions as number) || 0,
-        detectionStatus: (r.detection_status as string) || 'monitoring',
+        detectionStatus: 'idle',
         baselineStatus: (r.baseline_status as string) || 'learned',
         baselineConfidence: (r.baseline_confidence as number) || 80,
     };
@@ -397,9 +405,17 @@ export const domainApi = {
             const { data } = await supabase.from('drivers').select('*').eq('id', id).single();
             if (!data) throw new Error('Driver not found');
             const { data: sessData } = await supabase.from('sessions').select('*').eq('driver_id', id).order('created_at', { ascending: false });
+            const { data: alertData } = await supabase.from('alerts').select('*').eq('driver', id).order('created_at', { ascending: false });
             const driverRow = mapDriverRow(data);
             const sessions = (sessData || []).map(mapSessionRow);
             const todayTotal = driverRow.todayWorkHours || 0;
+            // Build per-driver weekly incidents from alerts
+            const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+            (alertData || []).forEach((a: Record<string, unknown>) => {
+                const ts = a.timestamp as string;
+                if (ts) { const d = new Date(ts); dayCounts[((d.getDay() + 6) % 7)] += 1; }
+            });
             return {
                 driver: driverRow,
                 sessions,
@@ -418,6 +434,7 @@ export const domainApi = {
                     reminderActive: todayTotal >= 6,
                     weeklyHours: [0, 0, 0, 0, 0, 0, 0],
                 },
+                drowsinessIncidents: dayNames.map((d, i) => ({ day: d, incidents: dayCounts[i] })),
             };
         }
     },
@@ -450,11 +467,15 @@ export const domainApi = {
         await supabase.from('alerts').update({ status }).neq('id', '');
     },
     deleteDriver: async (id: string) => {
-        await supabase.from('alerts').delete().eq('driver', id);
-        await supabase.from('sessions').delete().eq('driver_id', id);
-        await supabase.from('event_stats').delete().eq('driver_id', id);
-        await supabase.from('driver_notes').delete().eq('driver_id', id);
-        await supabase.from('drivers').delete().eq('id', id);
+        try {
+            await apiFetch(`/api/drivers/${id}`, { method: 'DELETE' });
+        } catch {
+            // Pi offline — delete directly from Supabase
+            await supabase.from('alerts').delete().eq('driver', id);
+            await supabase.from('sessions').delete().eq('driver_id', id);
+            await supabase.from('driver_notes').delete().eq('driver_id', id);
+            await supabase.from('drivers').delete().eq('id', id);
+        }
     },
 
     // --- Driver Notes ---

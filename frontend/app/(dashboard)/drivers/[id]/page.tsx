@@ -32,7 +32,7 @@ import {
     ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, formatTimestamp } from '@/lib/utils';
 
 export default function DriverProfilePage() {
     const params = useParams();
@@ -52,22 +52,26 @@ export default function DriverProfilePage() {
     const [chartRange, setChartRange] = useState<'week' | 'month'>('week');
 
     useEffect(() => {
-        Promise.all([
-            domainApi.getDriver(driverId),
-            domainApi.getDashboard(),
-            domainApi.getAlerts(),
-            domainApi.getDriverNotes(driverId),
-        ])
-            .then(([detail, dashboard, allAlerts, notes]) => {
+        const load = async () => {
+            try {
+                const [detail, allAlerts, notes] = await Promise.all([
+                    domainApi.getDriver(driverId),
+                    domainApi.getAlerts().catch(() => []),
+                    domainApi.getDriverNotes(driverId).catch(() => ''),
+                ]);
                 setDriver(detail.driver);
                 setDriverSessions(detail.sessions);
                 setWorkHours(detail.workHours);
-                setDrowsinessIncidents(dashboard.drowsinessIncidents);
-                setAlerts(allAlerts.filter(a => a.driver === driverId || a.driver === detail.driver.name));
+                setDrowsinessIncidents(detail.drowsinessIncidents ?? []);
+                setAlerts(allAlerts.filter((a: any) => a.driver === driverId || a.driver === detail.driver.name));
                 setAdminNotes(notes);
-            })
-            .catch(console.error)
-            .finally(() => setIsLoading(false));
+            } catch (e) {
+                console.error(e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        load();
     }, [driverId]);
 
     const activeSession = driverSessions.find(s => s.status === 'active');
@@ -157,7 +161,7 @@ export default function DriverProfilePage() {
                                     <Fingerprint className="w-4 h-4 text-emerald-500" />
                                     <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Face Registered</span>
                                 </div>
-                                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Auto-registered on {driver.faceRegisteredAt}</p>
+                                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Auto-registered on {formatTimestamp(driver.faceRegisteredAt)}</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">{driver.totalSessions} total sessions tracked</p>
                             </div>
 
@@ -181,7 +185,7 @@ export default function DriverProfilePage() {
                             <div className="space-y-4">
                                 <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
                                     <Calendar className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                                    <span className="text-sm font-medium">Registered: {driver.faceRegisteredAt}</span>
+                                    <span className="text-sm font-medium">Registered: {formatTimestamp(driver.faceRegisteredAt)}</span>
                                 </div>
                                 <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
                                     <Shield className="w-5 h-5 text-slate-400 dark:text-slate-500" />
@@ -301,7 +305,7 @@ export default function DriverProfilePage() {
                                             </div>
                                             <div>
                                                 <p className="font-bold text-slate-800 dark:text-white">{session.id}</p>
-                                                <p className="text-sm text-slate-500 dark:text-slate-400">{session.startTime} — {session.endTime || 'Ongoing'}</p>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400">{formatTimestamp(session.startTime)} — {session.endTime ? formatTimestamp(session.endTime) : 'Ongoing'}</p>
                                                 <div className="flex items-center gap-4 mt-1.5">
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.duration}</span>
                                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.busId}</span>

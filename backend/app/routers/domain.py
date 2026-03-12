@@ -19,6 +19,9 @@ router = APIRouter(prefix="/api", tags=["Domain"])
 
 STATE_FILE = Path("/tmp/safedrive_oled_state.json")
 
+# Philippine Standard Time (UTC+8)
+PHT = timezone(timedelta(hours=8))
+
 _log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -222,7 +225,7 @@ def _load_from_supabase():
             if sess["status"] == "active":
                 sess["status"] = "completed"
                 if not sess.get("endTime"):
-                    sess["endTime"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                    sess["endTime"] = datetime.now(PHT).strftime("%Y-%m-%d %I:%M %p")
                 _sb_upsert_session(sess)
             _completed_sessions.append(sess)
         _session_counter = max_counter
@@ -261,7 +264,7 @@ def _poll_state():
 
 def _process_state(data: dict):
     global _prev_state, _session_counter
-    now = datetime.now(timezone.utc)
+    now = datetime.now(PHT)
     driver_id = data.get("driver_id", "UNKNOWN")
     state = data.get("drowsiness_state", "ALERT")
     ear = data.get("ear_value", 0.0)
@@ -288,7 +291,7 @@ def _process_state(data: dict):
                     "lastAlert": "N/A",
                     "riskLevel": "Low",
                     "faceRegistered": True,
-                    "faceRegisteredAt": now.strftime("%Y-%m-%d %H:%M"),
+                    "faceRegisteredAt": now.strftime("%Y-%m-%d %I:%M %p"),
                     "totalSessions": 0,
                     "todayWorkHours": 0.0,
                     "todaySessions": 0,
@@ -310,7 +313,7 @@ def _process_state(data: dict):
                     "driverId": driver_id,
                     "driver": driver_id,
                     "busId": "BUS-001",
-                    "startTime": now.strftime("%Y-%m-%d %H:%M"),
+                    "startTime": now.strftime("%Y-%m-%d %I:%M %p"),
                     "endTime": None,
                     "status": "active",
                     "alertCount": 0,
@@ -326,7 +329,7 @@ def _process_state(data: dict):
             # Driver left — end session
             if prev_driver in _active_sessions:
                 sess = _active_sessions.pop(prev_driver)
-                sess["endTime"] = now.strftime("%Y-%m-%d %H:%M")
+                sess["endTime"] = now.strftime("%Y-%m-%d %I:%M %p")
                 sess["status"] = "completed"
                 _completed_sessions.append(sess)
                 sync_session_end = dict(sess)
@@ -339,7 +342,7 @@ def _process_state(data: dict):
                 "type": "Drowsiness Detected" if state == "DROWSY" else "Critical Drowsiness",
                 "driver": driver_id,
                 "bus": "BUS-001",
-                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": now.strftime("%Y-%m-%d %I:%M:%S %p"),
                 "status": "Active",
                 "severity": "High" if state == "CRITICAL" else "Medium",
                 "ear_value": ear,
@@ -456,7 +459,7 @@ def dashboard_stats():
                 "driver": state.get("driver_id", "UNKNOWN"),
                 "type": state.get("drowsiness_state", "ALERT").lower(),
                 "confidence": int(min(100, state.get("ear_value", 0) * 200)),
-                "timestamp": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+                "timestamp": datetime.now(PHT).strftime("%I:%M:%S %p"),
                 "alarmTriggered": state.get("drowsiness_state") in ("DROWSY", "CRITICAL"),
                 "alarmType": "buzzer_oled" if state.get("drowsiness_state") in ("DROWSY", "CRITICAL") else "none",
                 "vehicleMoving": state.get("is_moving", False),
@@ -519,17 +522,63 @@ def list_work_hours():
 @router.get("/drivers")
 def list_drivers():
     with _lock:
-        return list(_drivers.values()) if _drivers else []
+        result = []
+        for drv in _drivers.values():
+            d = dict(drv)
+            if d["id"] not in _active_sessions:
+                d["status"] = "Offline"
+                d["detectionStatus"] = "idle"
+            result.append(d)
+        return result
+
+
+@router.delete("/drivers/{driver_id}")
+def delete_driver(driver_id: str):
+    with _lock:
+        if driver_id not in _drivers:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        del _drivers[driver_id]
+        _active_sessions.pop(driver_id, None)
+        # Remove driver's alerts and sessions
+        _alerts[:] = [a for a in _alerts if a.get("driver") != driver_id]
+        _completed_sessions[:] = [s for s in _completed_sessions if s.get("driverId") != driver_id]
+
+    # Delete from Supabase
+    if _sb:
+        try:
+            _sb.table("alerts").delete().eq("driver", driver_id).execute()
+            _sb.table("sessions").delete().eq("driver_id", driver_id).execute()
+            _sb.table("driver_notes").delete().eq("driver_id", driver_id).execute()
+            _sb.table("drivers").delete().eq("id", driver_id).execute()
+        except Exception as e:
+            _log.warning("Supabase delete failed for %s: %s", driver_id, e)
+
+    return {"ok": True}
 
 
 @router.get("/drivers/{driver_id}")
 def get_driver(driver_id: str):
     with _lock:
         driver = _drivers.get(driver_id)
-    if not driver:
-        raise HTTPException(status_code=404, detail="Driver not found")
-    sessions = [s for s in list(_active_sessions.values()) + _completed_sessions if s.get("driverId") == driver_id]
-    return {"driver": driver, "sessions": sessions, "workHours": None}
+        if not driver:
+            raise HTTPException(status_code=404, detail="Driver not found")
+        sessions = [s for s in list(_active_sessions.values()) + _completed_sessions if s.get("driverId") == driver_id]
+
+        # Per-driver drowsiness incidents by day of week
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        driver_day_counts: dict[int, int] = {i: 0 for i in range(7)}
+        driver_name = driver.get("name", driver_id)
+        for a in _alerts:
+            if a.get("driver") not in (driver_id, driver_name):
+                continue
+            try:
+                dt = datetime.strptime(a["timestamp"], "%Y-%m-%d %H:%M:%S")
+                driver_day_counts[dt.weekday()] += 1
+            except (ValueError, KeyError):
+                pass
+        driver_incidents = [{"day": d, "incidents": driver_day_counts[i]} for i, d in enumerate(day_names)]
+
+    return {"driver": driver, "sessions": sessions, "workHours": None, "drowsinessIncidents": driver_incidents}
 
 
 @router.get("/alerts")

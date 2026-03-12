@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { useUIStore } from '@/store/useUIStore';
 import { domainApi, type AlertRecord } from '@/lib/api';
+import { formatTimestamp } from '@/lib/utils';
 
 export function Topbar() {
     const { theme, toggleTheme, logout, toggleSidebar } = useUIStore();
@@ -96,7 +97,7 @@ export function Topbar() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">{alert.alarmType || alert.type}</p>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{alert.driver} &bull; {alert.timestamp}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{alert.driver} &bull; {formatTimestamp(alert.timestamp)}</p>
                                     </div>
                                     <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${alert.severity === 'critical' ? 'text-brand-red' : 'text-brand-orange'}`}>
                                         {alert.severity}

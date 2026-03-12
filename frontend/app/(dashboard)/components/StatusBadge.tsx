@@ -16,10 +16,11 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
             case 'resolved':
                 return 'bg-emerald-100 text-emerald-700 border-emerald-200';
             case 'drowsy':
-            case 'offline':
             case 'high':
             case 'active':
                 return 'bg-rose-100 text-rose-700 border-rose-200';
+            case 'offline':
+                return 'bg-slate-100 text-slate-500 border-slate-200';
             case 'stationary':
             case 'medium':
             case 'acknowledged':
@@ -43,7 +44,8 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
                 "w-1.5 h-1.5 rounded-full mr-1.5",
                 status.toLowerCase() === 'normal' || status.toLowerCase() === 'online' || status.toLowerCase() === 'resolved' ? "bg-emerald-500" :
                     status.toLowerCase() === 'drowsy' || status.toLowerCase() === 'high' || status.toLowerCase() === 'active' ? "bg-rose-500 animate-pulse" :
-                        "bg-amber-500"
+                        status.toLowerCase() === 'offline' ? "bg-slate-400" :
+                            "bg-amber-500"
             )} />
             {status}
         </motion.span>

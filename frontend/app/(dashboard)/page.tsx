@@ -13,6 +13,7 @@ import {
     Area
 } from 'recharts';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { StatCard } from './components/StatCard';
 import { ChartCard } from './components/ChartCard';
 import { domainApi, type DashboardData, type DriverSession, type WorkHours } from '@/lib/api';
@@ -24,7 +25,7 @@ import { StatusBadge } from './components/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { supabase } from '@/lib/supabase';
-import { cn } from '@/lib/utils';
+import { cn, formatTimestamp } from '@/lib/utils';
 
 import { motion } from 'framer-motion';
 
@@ -64,18 +65,18 @@ export default function DashboardPage() {
     const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | 'all'>('all');
     const [analysisStats, setAnalysisStats] = useState<{ totalAlerts: number; highSeverity: number; resolvedRate: number; avgPerDay: number } | null>(null);
     useEffect(() => {
-        Promise.all([
-            domainApi.getDashboard(),
-            domainApi.getSessions(),
-            domainApi.getWorkHours(),
-        ])
-            .then(([dash, sess, wh]) => {
-                setDashboard(dash);
-                setSessions(sess);
-                setWorkHours(wh);
-            })
-            .catch(console.error)
-            .finally(() => setIsLoading(false));
+        const load = async () => {
+            const [dash, sess, wh] = await Promise.all([
+                domainApi.getDashboard().catch(() => null),
+                domainApi.getSessions().catch(() => []),
+                domainApi.getWorkHours().catch(() => []),
+            ]);
+            if (dash) setDashboard(dash);
+            setSessions(sess);
+            setWorkHours(wh);
+            setIsLoading(false);
+        };
+        load();
     }, []);
 
     useEffect(() => {
@@ -272,9 +273,11 @@ export default function DashboardPage() {
                 <Card className="xl:col-span-2 border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden rounded-[24px]">
                     <CardHeader className="flex flex-row items-center justify-between">
                         <CardTitle className="text-lg font-black dark:text-white">Recent Security Violations</CardTitle>
-                        <Button variant="ghost" size="sm" className="text-brand-red font-bold uppercase tracking-widest text-[10px] gap-2">
-                            Full Log <ExternalLink className="w-3 h-3" />
-                        </Button>
+                        <Link href="/alerts">
+                            <Button variant="ghost" size="sm" className="text-brand-red font-bold uppercase tracking-widest text-[10px] gap-2">
+                                Full Log <ExternalLink className="w-3 h-3" />
+                            </Button>
+                        </Link>
                     </CardHeader>
                     <CardContent className="px-0">
                         <div className="overflow-x-auto">
@@ -308,7 +311,7 @@ export default function DashboardPage() {
                                             <td className="px-6 py-4">
                                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{alert.sessionId}</span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm font-medium text-slate-400 dark:text-slate-500">{alert.time}</td>
+                                            <td className="px-6 py-4 text-sm font-medium text-slate-400 dark:text-slate-500">{formatTimestamp(alert.time)}</td>
                                             <td className="px-6 py-4 text-right">
                                                 {alert.alarmTriggered ? (
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-black text-brand-red uppercase tracking-widest">
@@ -373,7 +376,7 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{event.timestamp}</p>
+                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{formatTimestamp(event.timestamp, false)}</p>
                                         {event.alarmTriggered && (
                                             <div className="flex items-center gap-1 mt-1 justify-end">
                                                 <Volume2 className="w-3 h-3 text-brand-red" />
