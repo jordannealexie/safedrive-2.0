@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/app/(dashboard)/components/StatusBadge';
-import { Bus, Navigation, Activity, Zap, Search } from 'lucide-react';
+import { Bus, Navigation, Activity, Zap, Search, Eye, EyeOff, ShieldAlert, Brain, Clock, Volume2, Monitor } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,9 +17,7 @@ const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { 
 const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), { ssr: false }) as any;
 
 const MOCK_LOCATIONS = [
-    { id: 'DRV001', lat: 14.5995, lng: 120.9842, driver: 'John Doe', status: 'Normal', speed: '45 km/h', lastAlert: 'None', session: 'SES-003' },
-    { id: 'DRV002', lat: 14.6091, lng: 121.0223, driver: 'Jane Smith', status: 'Drowsy', speed: '62 km/h', lastAlert: '5m ago', session: 'SES-007' },
-    { id: 'DRV003', lat: 14.5678, lng: 120.9432, driver: 'Michael Brown', status: 'Stationary', speed: '0 km/h', lastAlert: 'N/A', session: 'SES-012' },
+    { id: 'BUS-001', lat: 14.5995, lng: 120.9842, driver: 'Driver 1', status: 'Normal', speed: '45 km/h', lastAlert: 'None', session: 'SES-20260312-001', detectionStatus: 'monitoring', baselineStatus: 'learned', baselineConfidence: 92, baselineDeviation: 5, sessionDuration: '3h 12m', todayWorkHours: 3.2, vehicleMoving: true },
 ];
 
 export default function LiveMonitoringPage() {
@@ -43,8 +41,8 @@ export default function LiveMonitoringPage() {
         <div className="h-[calc(100vh-120px)] flex flex-col gap-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Live Fleet Monitoring</h1>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium">Real-time GPS tracking and drowsiness status.</p>
+                    <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Live Monitoring</h1>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">Real-time GPS tracking and drowsiness status for the prototype unit.</p>
                 </div>
                 <div className="flex gap-4">
                     <div className="relative w-64">
@@ -94,15 +92,15 @@ export default function LiveMonitoringPage() {
                         <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur p-4 rounded-2xl shadow-xl border border-white/50 dark:border-slate-800 space-y-3">
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Normal (1)</span>
+                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Normal</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(244,63,94,0.4)]" />
-                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Drowsy (1)</span>
+                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Drowsy</span>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
-                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Not Moving (1)</span>
+                                <span className="text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">Stationary</span>
                             </div>
                         </div>
                     </div>
@@ -143,6 +141,43 @@ export default function LiveMonitoringPage() {
                                             <span className="font-bold text-slate-800 dark:text-white">{selectedBus.driver}</span>
                                         </div>
 
+                                        {/* Detection Status */}
+                                        <div className={`p-4 rounded-2xl border ${selectedBus.detectionStatus === 'drowsy_detected' ? 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30' : selectedBus.detectionStatus === 'monitoring' ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-900/30' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800'}`}>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                {selectedBus.detectionStatus === 'drowsy_detected' ? <EyeOff className="w-4 h-4 text-brand-red" /> : selectedBus.detectionStatus === 'monitoring' ? <Eye className="w-4 h-4 text-emerald-500" /> : <Monitor className="w-4 h-4 text-slate-400" />}
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Detection Status</span>
+                                            </div>
+                                            <p className={`font-black text-sm ${selectedBus.detectionStatus === 'drowsy_detected' ? 'text-brand-red' : selectedBus.detectionStatus === 'monitoring' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                                                {selectedBus.detectionStatus === 'drowsy_detected' ? 'DROWSINESS DETECTED' : selectedBus.detectionStatus === 'monitoring' ? 'Normal — Monitoring' : 'Idle — Vehicle Stationary'}
+                                            </p>
+                                            {selectedBus.detectionStatus === 'drowsy_detected' && selectedBus.vehicleMoving && (
+                                                <div className="flex items-center gap-1 mt-2">
+                                                    <Volume2 className="w-3 h-3 text-brand-red" />
+                                                    <span className="text-[10px] font-black text-brand-red uppercase tracking-widest">Buzzer & OLED Active</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Baseline Status */}
+                                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Brain className="w-4 h-4 text-brand-orange" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Behavioral Baseline</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className={`text-xs font-black uppercase tracking-widest ${selectedBus.baselineStatus === 'learned' ? 'text-emerald-500' : selectedBus.baselineStatus === 'deviation' ? 'text-brand-red' : 'text-brand-orange'}`}>
+                                                    {selectedBus.baselineStatus === 'learned' ? 'Learned' : selectedBus.baselineStatus === 'deviation' ? 'Deviation Detected' : 'Learning...'}
+                                                </span>
+                                                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{selectedBus.baselineConfidence}%</span>
+                                            </div>
+                                            <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2">
+                                                <div className={`h-full rounded-full ${selectedBus.baselineStatus === 'learned' ? 'bg-emerald-500' : selectedBus.baselineStatus === 'deviation' ? 'bg-brand-red' : 'bg-brand-orange'}`} style={{ width: `${selectedBus.baselineConfidence}%` }} />
+                                            </div>
+                                            {selectedBus.baselineDeviation > 20 && (
+                                                <p className="text-[10px] font-black text-brand-red mt-2 uppercase tracking-widest">+{selectedBus.baselineDeviation}% deviation from baseline</p>
+                                            )}
+                                        </div>
+
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
                                                 <Navigation className="w-4 h-4 text-brand-orange mb-2" />
@@ -154,6 +189,28 @@ export default function LiveMonitoringPage() {
                                                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Last Alert</p>
                                                 <p className="font-extrabold text-slate-800 dark:text-white">{selectedBus.lastAlert}</p>
                                             </div>
+                                        </div>
+
+                                        {/* Session Info */}
+                                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <Clock className="w-4 h-4 text-slate-400" />
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Active Session</span>
+                                            </div>
+                                            <p className="text-xs font-black text-slate-700 dark:text-slate-200">{selectedBus.session}</p>
+                                            <div className="flex items-center justify-between mt-2">
+                                                <span className="text-[10px] font-bold text-slate-400">Duration</span>
+                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{selectedBus.sessionDuration}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <span className="text-[10px] font-bold text-slate-400">Today Total</span>
+                                                <span className={`text-xs font-black ${selectedBus.todayWorkHours >= 4 ? 'text-brand-orange' : 'text-slate-700 dark:text-slate-200'}`}>{selectedBus.todayWorkHours}h</span>
+                                            </div>
+                                            {selectedBus.todayWorkHours >= 4 && (
+                                                <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                                    <p className="text-[10px] font-black text-brand-orange uppercase tracking-widest">4h threshold reached — rest reminder active</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

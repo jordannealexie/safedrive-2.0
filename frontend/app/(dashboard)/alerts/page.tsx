@@ -17,7 +17,10 @@ import {
     MoreHorizontal,
     ShieldAlert,
     Clock,
-    CheckCircle
+    CheckCircle,
+    Volume2,
+    Brain,
+    EyeOff
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -109,7 +112,7 @@ export default function AlertsPage() {
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row gap-4 justify-between bg-slate-50/30 dark:bg-slate-800/20">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search by type, driver, or session ID..." className="pl-10 h-11 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 transition-all rounded-xl" />
+                        <Input placeholder="Search by type, driver number, or session ID..." className="pl-10 h-11 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 transition-all rounded-xl" />
                     </div>
                     <div className="flex gap-2">
                         <Button variant="outline" className="gap-2 h-11 px-6 border-slate-200 dark:border-slate-800 dark:text-slate-300 font-bold">
@@ -124,9 +127,10 @@ export default function AlertsPage() {
                             <tr className="bg-slate-50 dark:bg-slate-800/50 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
                                 <th className="px-6 py-4">Anomaly Class</th>
                                 <th className="px-6 py-4">Personnel / Unit</th>
+                                <th className="px-6 py-4">Session</th>
                                 <th className="px-6 py-4">Timestamp</th>
-                                <th className="px-6 py-4">Geospatial Marker</th>
-                                <th className="px-6 py-4">Severity</th>
+                                <th className="px-6 py-4">Deviation</th>
+                                <th className="px-6 py-4">Alarm</th>
                                 <th className="px-6 py-4">Audit Status</th>
                                 <th className="px-6 py-4 text-right">Action</th>
                             </tr>
@@ -158,17 +162,36 @@ export default function AlertsPage() {
                                                 <span className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">{alert.bus}</span>
                                             </div>
                                         </td>
+                                        <td className="px-6 py-4">
+                                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{alert.sessionId}</span>
+                                        </td>
                                         <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-bold text-xs">{alert.timestamp}</td>
                                         <td className="px-6 py-4">
-                                            <span className="text-xs text-slate-600 dark:text-slate-400 font-bold">{alert.location}</span>
+                                            {alert.baselineDeviation > 0 ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <Brain className="w-3 h-3 text-brand-orange" />
+                                                    <span className={cn(
+                                                        "text-[10px] font-black uppercase tracking-widest",
+                                                        alert.baselineDeviation > 30 ? "text-brand-red" : "text-brand-orange"
+                                                    )}>
+                                                        +{alert.baselineDeviation}%
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">N/A</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={cn(
-                                                "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded",
-                                                alert.severity === 'High' ? "text-brand-red bg-brand-red/5" : "text-brand-orange bg-brand-orange/5"
-                                            )}>
-                                                {alert.severity}
-                                            </span>
+                                            {alert.alarmType === 'buzzer_oled' ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <Volume2 className="w-3.5 h-3.5 text-brand-red" />
+                                                    <span className="text-[10px] font-black text-brand-red uppercase tracking-widest">Buzzer+OLED</span>
+                                                </div>
+                                            ) : alert.alarmType === 'visual_only' ? (
+                                                <span className="text-[10px] font-black text-brand-orange uppercase tracking-widest">Visual</span>
+                                            ) : (
+                                                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">None</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4">
                                             <StatusBadge status={alert.status} />

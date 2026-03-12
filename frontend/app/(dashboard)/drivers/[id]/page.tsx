@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { MOCK_DRIVERS, DROWSINESS_INCIDENTS } from '@/lib/mock-data';
+import { MOCK_DRIVERS, DROWSINESS_INCIDENTS, DRIVER_SESSIONS, WORK_HOURS_DATA } from '@/lib/mock-data';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,14 @@ import {
     MapPin,
     Shield,
     AlertTriangle,
-    Clock
+    Clock,
+    Eye,
+    EyeOff,
+    Brain,
+    UserCheck,
+    Fingerprint,
+    Activity,
+    Volume2
 } from 'lucide-react';
 import {
     LineChart,
@@ -30,6 +37,9 @@ export default function DriverProfilePage() {
     const router = useRouter();
     const driverId = params.id as string;
     const driver = MOCK_DRIVERS.find(d => d.id === driverId) || MOCK_DRIVERS[0];
+    const driverSessions = DRIVER_SESSIONS.filter(s => s.driverId === driver.id);
+    const activeSession = driverSessions.find(s => s.status === 'active');
+    const workHours = WORK_HOURS_DATA.find(w => w.driverId === driver.id);
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto">
@@ -86,6 +96,33 @@ export default function DriverProfilePage() {
                                 </div>
                             </div>
 
+                            {/* Face Registration Status */}
+                            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Fingerprint className="w-4 h-4 text-emerald-500" />
+                                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Face Registered</span>
+                                </div>
+                                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">Auto-registered on {driver.faceRegisteredAt}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">{driver.totalSessions} total sessions tracked</p>
+                            </div>
+
+                            {/* Detection Status */}
+                            <div className={`p-4 rounded-2xl border ${driver.detectionStatus === 'drowsy_detected' ? 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30' : driver.detectionStatus === 'monitoring' ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30' : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                    {driver.detectionStatus === 'drowsy_detected' ? <EyeOff className="w-4 h-4 text-brand-red" /> : <Eye className="w-4 h-4 text-blue-500" />}
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Detection Status</span>
+                                </div>
+                                <p className={`text-sm font-black ${driver.detectionStatus === 'drowsy_detected' ? 'text-brand-red' : driver.detectionStatus === 'monitoring' ? 'text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-300'}`}>
+                                    {driver.detectionStatus === 'drowsy_detected' ? 'Drowsiness Detected' : driver.detectionStatus === 'monitoring' ? 'Active Monitoring' : 'Idle'}
+                                </p>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <Brain className="w-3 h-3 text-slate-400" />
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${driver.baselineStatus === 'learned' ? 'text-emerald-500' : driver.baselineStatus === 'deviation' ? 'text-brand-red' : 'text-brand-orange'}`}>
+                                        Baseline: {driver.baselineStatus === 'learned' ? 'Learned' : driver.baselineStatus === 'deviation' ? 'Deviation' : 'Learning'} ({driver.baselineConfidence}%)
+                                    </span>
+                                </div>
+                            </div>
+
                             <div className="space-y-4">
                                 <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
                                     <Calendar className="w-5 h-5 text-slate-400 dark:text-slate-500" />
@@ -108,14 +145,32 @@ export default function DriverProfilePage() {
                             <CardTitle className="text-lg dark:text-white">Active Session</CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="flex items-start gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border dark:border-slate-700">
-                                <Clock className="w-5 h-5 text-brand-orange mt-0.5" />
-                                <div>
-                                    <p className="font-bold text-slate-800 dark:text-white">Session #SES-20260116-003</p>
-                                    <p className="text-sm text-slate-500 dark:text-slate-400">Started: 06:14 AM</p>
-                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-tighter">Baseline learned • 2h 46m elapsed</p>
+                            {activeSession ? (
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border dark:border-slate-700">
+                                    <div className="flex items-start gap-4">
+                                        <Clock className="w-5 h-5 text-brand-orange mt-0.5" />
+                                        <div className="flex-1">
+                                            <p className="font-bold text-slate-800 dark:text-white">{activeSession.id}</p>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400">Started: {activeSession.startTime.split(' ')[1]}</p>
+                                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-tighter">
+                                                {activeSession.baselineStatus === 'learned' ? 'Baseline learned' : activeSession.baselineStatus === 'learning' ? 'Learning baseline...' : 'Baseline deviation detected'} • {activeSession.duration} elapsed
+                                            </p>
+                                            <div className="flex items-center gap-4 mt-3">
+                                                <div className="flex items-center gap-1">
+                                                    <AlertTriangle className="w-3 h-3 text-brand-orange" />
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{activeSession.alertCount} alerts</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <EyeOff className="w-3 h-3 text-brand-red" />
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{activeSession.drowsinessEvents} drowsy</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <p className="text-sm text-slate-500 dark:text-slate-400 italic">No active session</p>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -126,18 +181,33 @@ export default function DriverProfilePage() {
                         <CardContent className="space-y-3">
                             <div className="flex items-center justify-between">
                                 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Total driving time</span>
-                                <span className="font-bold text-slate-800 dark:text-white">5h 22m</span>
+                                <span className="font-bold text-slate-800 dark:text-white">{workHours ? `${workHours.todayTotal}h` : '0h'}</span>
                             </div>
                             <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-brand-orange rounded-full" style={{ width: '67%' }} />
+                                <div className={`h-full rounded-full ${(workHours?.todayTotal || 0) >= 8 ? 'bg-brand-red' : (workHours?.todayTotal || 0) >= 4 ? 'bg-brand-orange' : 'bg-emerald-500'}`} style={{ width: `${Math.min(((workHours?.todayTotal || 0) / 8) * 100, 100)}%` }} />
                             </div>
                             <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                                 <span>0h</span>
-                                <span className="text-brand-orange">4h</span>
-                                <span className="text-brand-red">6h</span>
-                                <span>8h</span>
+                                <span className={(workHours?.threshold4h) ? 'text-brand-orange' : ''}>4h</span>
+                                <span className={(workHours?.threshold8h) ? 'text-brand-red' : ''}>8h</span>
                             </div>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Approaching 6-hour threshold — rest reminder will trigger soon.</p>
+                            {workHours?.reminderActive && (
+                                <div className="p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30 mt-2">
+                                    <p className="text-xs font-black text-brand-orange uppercase tracking-tight">Rest reminder active — approaching work hour threshold</p>
+                                </div>
+                            )}
+                            {workHours && workHours.sessions.length > 1 && (
+                                <div className="mt-3 space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Today&apos;s Sessions ({workHours.sessions.length})</p>
+                                    {workHours.sessions.map((s, i) => (
+                                        <div key={i} className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                                            <span className="font-medium">{s.start} — {s.active ? 'Ongoing' : s.end}</span>
+                                            <span className="font-bold">{s.duration.toFixed(1)}h</span>
+                                        </div>
+                                    ))}
+                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium italic mt-1">Hours accumulated across intermittent sessions</p>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </div>
@@ -188,6 +258,47 @@ export default function DriverProfilePage() {
                                         />
                                     </LineChart>
                                 </ResponsiveContainer>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Session History */}
+                    <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-xl dark:text-white">Session History</CardTitle>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{driverSessions.length} Sessions</span>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="divide-y dark:divide-slate-800">
+                                {driverSessions.map((session) => (
+                                    <div key={session.id} className="flex items-center justify-between p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <div className="flex items-start gap-4">
+                                            <div className={`p-3 rounded-xl ${session.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                                                <Activity className={`w-5 h-5 ${session.status === 'active' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-slate-800 dark:text-white">{session.id}</p>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400">{session.startTime} — {session.endTime || 'Ongoing'}</p>
+                                                <div className="flex items-center gap-4 mt-1.5">
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.duration}</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.busId}</span>
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${session.baselineStatus === 'learned' ? 'text-emerald-500' : session.baselineStatus === 'deviation' ? 'text-brand-red' : 'text-brand-orange'}`}>
+                                                        Baseline: {session.baselineStatus} ({session.baselineConfidence}%)
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <StatusBadge status={session.status === 'active' ? 'Online' : 'Resolved'} />
+                                            <div className="flex items-center gap-3 mt-2 justify-end">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.alertCount} alerts</span>
+                                                <span className="text-[10px] font-black text-brand-red uppercase tracking-widest">{session.drowsinessEvents} drowsy</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </CardContent>
                     </Card>

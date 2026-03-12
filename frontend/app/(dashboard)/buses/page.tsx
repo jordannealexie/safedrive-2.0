@@ -55,8 +55,8 @@ export default function BusesPage() {
         <div className="space-y-8 max-w-[1600px] mx-auto pb-8">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Fleet Repository</h1>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Operational status and telemetry vault for all connected units.</p>
+                    <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Prototype Unit</h1>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Operational status and telemetry for the connected prototype.</p>
                 </div>
                 <Button className="bg-brand-red hover:bg-brand-red/90 text-white h-11 px-6 font-bold shadow-lg shadow-brand-red/20 gap-2">
                     <Plus className="w-4 h-4" /> Add Vehicle

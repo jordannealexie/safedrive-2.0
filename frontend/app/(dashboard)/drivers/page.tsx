@@ -6,7 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Search, MoreVertical, Eye, Edit2, Trash2, Filter, UserPlus, Download } from 'lucide-react';
+import { Search, MoreVertical, Eye, Edit2, Trash2, Filter, UserPlus, Download, Fingerprint, Clock, Brain } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -35,6 +35,8 @@ export default function DriversPage() {
             </td>
             <td className="px-6 py-4"><Skeleton className="h-4 w-16" /></td>
             <td className="px-6 py-4"><Skeleton className="h-6 w-20" /></td>
+            <td className="px-6 py-4"><Skeleton className="h-4 w-16" /></td>
+            <td className="px-6 py-4"><Skeleton className="h-4 w-12" /></td>
             <td className="px-6 py-4"><Skeleton className="h-4 w-12" /></td>
             <td className="px-6 py-4"><Skeleton className="h-4 w-16" /></td>
             <td className="px-6 py-4 text-right"><Skeleton className="h-8 w-8 ml-auto" /></td>
@@ -57,7 +59,7 @@ export default function DriversPage() {
                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-4 justify-between bg-slate-50/50 dark:bg-slate-800/20">
                     <div className="relative w-full md:w-96">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search by name, ID or bus..." className="pl-10 h-10 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200" />
+                        <Input placeholder="Search by driver number or ID..." className="pl-10 h-10 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200" />
                     </div>
                     <div className="flex gap-2">
                         <Button variant="outline" size="sm" className="gap-2 h-10 border-slate-200 dark:border-slate-800 dark:text-slate-300">
@@ -76,7 +78,9 @@ export default function DriversPage() {
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Operator</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Internal ID</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Live Status</th>
-                                <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Last Telemetry</th>
+                                <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Detection</th>
+                                <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Work Hours</th>
+                                <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Sessions</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800">Risk Matrix</th>
                                 <th className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 text-right">Actions</th>
                             </tr>
@@ -105,7 +109,43 @@ export default function DriversPage() {
                                         <td className="px-6 py-4">
                                             <StatusBadge status={driver.status} />
                                         </td>
-                                        <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-xs font-bold">{driver.lastAlert}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                {driver.detectionStatus === 'drowsy_detected' ? (
+                                                    <span className="text-[10px] font-black text-brand-red uppercase tracking-widest flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-brand-red animate-pulse" />
+                                                        Drowsy
+                                                    </span>
+                                                ) : driver.detectionStatus === 'monitoring' ? (
+                                                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                        Monitoring
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Idle</span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-1 mt-1">
+                                                <Brain className="w-3 h-3 text-slate-300" />
+                                                <span className={`text-[9px] font-bold ${driver.baselineStatus === 'learned' ? 'text-emerald-400' : driver.baselineStatus === 'deviation' ? 'text-brand-red' : 'text-brand-orange'}`}>
+                                                    {driver.baselineConfidence}%
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={cn(
+                                                "text-sm font-bold",
+                                                driver.todayWorkHours >= 8 ? "text-brand-red" : driver.todayWorkHours >= 4 ? "text-brand-orange" : "text-slate-700 dark:text-slate-200"
+                                            )}>{driver.todayWorkHours}h</span>
+                                            <div className="h-1 w-16 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mt-1">
+                                                <div className={`h-full rounded-full ${driver.todayWorkHours >= 8 ? 'bg-brand-red' : driver.todayWorkHours >= 4 ? 'bg-brand-orange' : 'bg-emerald-500'}`} style={{ width: `${Math.min((driver.todayWorkHours / 8) * 100, 100)}%` }} />
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{driver.todaySessions}</span>
+                                            <span className="text-[10px] text-slate-400 ml-1">today</span>
+                                            <p className="text-[10px] text-slate-400 font-medium">{driver.totalSessions} total</p>
+                                        </td>
                                         <td className="px-6 py-4">
                                             <span className={cn(
                                                 "text-[10px] font-black uppercase tracking-widest",
@@ -146,7 +186,7 @@ export default function DriversPage() {
                 </div>
 
                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 flex items-center justify-between">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Showing 3 of 38 units</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Showing {MOCK_DRIVERS.length} registered drivers</p>
                     <div className="flex gap-1">
                         <Button variant="ghost" size="sm" disabled className="text-slate-400 text-xs font-black uppercase">Prev</Button>
                         <Button variant="ghost" size="sm" className="text-brand-red font-black">1</Button>

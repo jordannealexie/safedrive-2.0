@@ -18,6 +18,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
             case 'drowsy':
             case 'offline':
             case 'high':
+            case 'active':
                 return 'bg-rose-100 text-rose-700 border-rose-200';
             case 'stationary':
             case 'medium':
@@ -40,8 +41,8 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
         >
             <span className={cn(
                 "w-1.5 h-1.5 rounded-full mr-1.5",
-                status.toLowerCase() === 'normal' || status.toLowerCase() === 'online' ? "bg-emerald-500" :
-                    status.toLowerCase() === 'drowsy' || status.toLowerCase() === 'high' ? "bg-rose-500 animate-pulse" :
+                status.toLowerCase() === 'normal' || status.toLowerCase() === 'online' || status.toLowerCase() === 'resolved' ? "bg-emerald-500" :
+                    status.toLowerCase() === 'drowsy' || status.toLowerCase() === 'high' || status.toLowerCase() === 'active' ? "bg-rose-500 animate-pulse" :
                         "bg-amber-500"
             )} />
             {status}

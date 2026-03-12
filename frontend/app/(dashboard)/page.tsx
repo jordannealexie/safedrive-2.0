@@ -15,18 +15,38 @@ import {
 import dynamic from 'next/dynamic';
 import { StatCard } from './components/StatCard';
 import { ChartCard } from './components/ChartCard';
-import { DASHBOARD_STATS, DROWSINESS_INCIDENTS, PEAK_HOURS, RECENT_ALERTS } from '@/lib/mock-data';
+import { DASHBOARD_STATS, DROWSINESS_INCIDENTS, PEAK_HOURS, RECENT_ALERTS, DETECTION_FEED, DRIVER_SESSIONS, WORK_HOURS_DATA } from '@/lib/mock-data';
 import { Button } from '@/components/ui/button';
-import { Download, Filter, Plus, ExternalLink, ShieldAlert } from 'lucide-react';
+import { Download, Filter, Plus, ExternalLink, ShieldAlert, Eye, EyeOff, Volume2, Monitor, Clock, UserCheck, Brain, Activity } from 'lucide-react';
 import { useUIStore } from '@/store/useUIStore';
 import { StatusBadge } from './components/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+import { motion } from 'framer-motion';
 
 // Dynamically import Leaflet with no SSR
 const MiniLiveMap = dynamic(() => import('./components/MiniLiveMap'), {
     ssr: false,
     loading: () => <div className="h-full w-full bg-slate-100 dark:bg-slate-800 animate-pulse rounded-2xl" />
 });
+
+const getDetectionIcon = (type: string) => {
+    switch (type) {
+        case 'drowsy_detected': return <EyeOff className="w-4 h-4 text-brand-red" />;
+        case 'continuous_drowsy': return <ShieldAlert className="w-4 h-4 text-brand-red" />;
+        case 'baseline_deviation': return <Activity className="w-4 h-4 text-brand-orange" />;
+        default: return <Eye className="w-4 h-4 text-emerald-500" />;
+    }
+};
+
+const getDetectionLabel = (type: string) => {
+    switch (type) {
+        case 'drowsy_detected': return 'Drowsiness Detected';
+        case 'continuous_drowsy': return 'Continuous Drowsiness';
+        case 'baseline_deviation': return 'Baseline Deviation';
+        default: return 'Normal';
+    }
+};
 
 export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
@@ -61,7 +81,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 {DASHBOARD_STATS.map((stat, index) => (
                     <StatCard
                         key={stat.label}
@@ -181,8 +201,9 @@ export default function DashboardPage() {
                                     <tr>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Driver</th>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Incident</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Session</th>
                                         <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Time</th>
-                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Action</th>
+                                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Alarm</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -191,7 +212,7 @@ export default function DashboardPage() {
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs">
-                                                        {alert.driver[0]}
+                                                        {alert.driver.replace('Driver ', 'D')}
                                                     </div>
                                                     <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{alert.driver}</span>
                                                 </div>
@@ -202,11 +223,18 @@ export default function DashboardPage() {
                                                     <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{alert.type}</span>
                                                 </div>
                                             </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{alert.sessionId}</span>
+                                            </td>
                                             <td className="px-6 py-4 text-sm font-medium text-slate-400 dark:text-slate-500">{alert.time}</td>
                                             <td className="px-6 py-4 text-right">
-                                                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-brand-red opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    Resolve
-                                                </Button>
+                                                {alert.alarmTriggered ? (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-black text-brand-red uppercase tracking-widest">
+                                                        <Volume2 className="w-3 h-3" /> Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Visual Only</span>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -223,6 +251,116 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent className="h-[320px] p-0 relative">
                         <MiniLiveMap />
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* Real-time Detection Feed & Active Sessions */}
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* Detection Feed */}
+                <Card className="border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden rounded-[24px]">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-2 h-2 rounded-full bg-brand-red animate-pulse" />
+                            <CardTitle className="text-lg font-black dark:text-white">Live Detection Feed</CardTitle>
+                        </div>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Realtime</span>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {DETECTION_FEED.map((event, i) => (
+                                <motion.div
+                                    key={event.id}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.05 }}
+                                    className="px-6 py-4 flex items-center justify-between hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className={`p-2 rounded-xl ${event.type === 'normal' ? 'bg-emerald-50 dark:bg-emerald-900/20' : event.type === 'baseline_deviation' ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-red-50 dark:bg-red-900/20'}`}>
+                                            {getDetectionIcon(event.type)}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{event.driver}</p>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{getDetectionLabel(event.type)}</span>
+                                                {event.baselineDeviation > 20 && (
+                                                    <span className="text-[10px] font-black text-brand-orange">+{event.baselineDeviation}% dev</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{event.timestamp}</p>
+                                        {event.alarmTriggered && (
+                                            <div className="flex items-center gap-1 mt-1 justify-end">
+                                                <Volume2 className="w-3 h-3 text-brand-red" />
+                                                <span className="text-[10px] font-black text-brand-red uppercase">Alarm</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Active Sessions & Work Hours */}
+                <Card className="border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden rounded-[24px]">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle className="text-lg font-black dark:text-white">Active Sessions & Work Hours</CardTitle>
+                        <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{DRIVER_SESSIONS.filter(s => s.status === 'active').length} Active</span>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {WORK_HOURS_DATA.map((wh, i) => {
+                                const session = DRIVER_SESSIONS.find(s => s.driverId === wh.driverId && s.status === 'active');
+                                const percentage = Math.min((wh.todayTotal / 8) * 100, 100);
+                                return (
+                                    <motion.div
+                                        key={wh.driverId}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: i * 0.1 }}
+                                        className="px-6 py-5 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors"
+                                    >
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs border border-slate-200 dark:border-slate-700">
+                                                    {wh.driver.split(' ').map(n => n[0]).join('')}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{wh.driver}</p>
+                                                    {session && (
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.id} • {session.duration}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-lg font-black text-slate-800 dark:text-white">{wh.todayTotal}h</p>
+                                                {wh.reminderActive && (
+                                                    <span className="text-[10px] font-black text-brand-orange uppercase tracking-widest">Rest Reminder</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full transition-all ${wh.todayTotal >= 8 ? 'bg-brand-red' : wh.todayTotal >= 4 ? 'bg-brand-orange' : 'bg-emerald-500'}`}
+                                                style={{ width: `${percentage}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between mt-1.5 text-[10px] font-black uppercase tracking-widest text-slate-300 dark:text-slate-600">
+                                            <span>0h</span>
+                                            <span className={wh.threshold4h ? 'text-brand-orange' : ''}>4h</span>
+                                            <span className={wh.threshold8h ? 'text-brand-red' : ''}>8h</span>
+                                        </div>
+                                    </motion.div>
+                                );
+                            })}
+                        </div>
                     </CardContent>
                 </Card>
             </div>
