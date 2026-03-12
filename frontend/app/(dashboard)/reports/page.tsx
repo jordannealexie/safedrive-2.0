@@ -39,7 +39,7 @@ export default function ReportsPage() {
             }).catch(() => {}),
             domainApi.getDrivers().then(d => { setDrivers(d); setDriverCount(d.length); }).catch(() => {}),
             domainApi.getSessions().then(s => { setSessions(s); setSessionCount(s.length); }).catch(() => {}),
-            supabase.from('reports').select('*').order('generated_at', { ascending: false }).then(({ data }) => {
+            Promise.resolve(supabase.from('reports').select('*').order('generated_at', { ascending: false })).then(({ data }) => {
                 if (data) setReports(data.map((r: any) => ({ id: r.id, name: r.name, date: r.date, rows: r.rows })));
             }).catch(() => {}),
         ]).finally(() => setIsLoading(false));
