@@ -4,10 +4,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
-    // On HTTPS (Vercel), skip Pi API calls — mixed content is blocked
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && API_URL.startsWith('http:')) {
-        throw new Error('Mixed content blocked');
-    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {

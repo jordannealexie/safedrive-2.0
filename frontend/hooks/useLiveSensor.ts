@@ -16,8 +16,6 @@ export function useLiveSensor() {
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const connect = useCallback(() => {
-        // Skip WebSocket on HTTPS (e.g. Vercel) — Pi is only reachable via local/Tailscale
-        if (typeof window !== 'undefined' && window.location.protocol === 'https:') return;
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
         const ws = new WebSocket(getWsUrl('/ws/live'));
