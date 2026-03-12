@@ -1,7 +1,8 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { MOCK_DRIVERS, DROWSINESS_INCIDENTS, DRIVER_SESSIONS, WORK_HOURS_DATA } from '@/lib/mock-data';
+import { useState, useEffect } from 'react';
+import { domainApi, type Driver, type DriverSession, type WorkHours, type IncidentPoint } from '@/lib/api';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,10 +37,40 @@ export default function DriverProfilePage() {
     const params = useParams();
     const router = useRouter();
     const driverId = params.id as string;
-    const driver = MOCK_DRIVERS.find(d => d.id === driverId) || MOCK_DRIVERS[0];
-    const driverSessions = DRIVER_SESSIONS.filter(s => s.driverId === driver.id);
+
+    const [driver, setDriver] = useState<Driver | null>(null);
+    const [driverSessions, setDriverSessions] = useState<DriverSession[]>([]);
+    const [workHours, setWorkHours] = useState<WorkHours | null>(null);
+    const [drowsinessIncidents, setDrowsinessIncidents] = useState<IncidentPoint[]>([]);
+    const [alerts, setAlerts] = useState<Array<{ id: string; type: string; severity: string; message: string; timestamp: string; driverId: string; status: string }>>([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        Promise.all([
+            domainApi.getDriver(driverId),
+            domainApi.getDashboard(),
+            domainApi.getAlerts(),
+        ])
+            .then(([detail, dashboard, allAlerts]) => {
+                setDriver(detail.driver);
+                setDriverSessions(detail.sessions);
+                setWorkHours(detail.workHours);
+                setDrowsinessIncidents(dashboard.drowsinessIncidents);
+                setAlerts(allAlerts.filter((a: { driverId: string }) => a.driverId === driverId));
+            })
+            .catch(console.error)
+            .finally(() => setIsLoading(false));
+    }, [driverId]);
+
     const activeSession = driverSessions.find(s => s.status === 'active');
-    const workHours = WORK_HOURS_DATA.find(w => w.driverId === driver.id);
+
+    if (isLoading || !driver) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <p className="text-slate-400 dark:text-slate-500">Loading driver profile...</p>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto">
@@ -78,7 +109,7 @@ export default function DriverProfilePage() {
                                 <h2 className="text-xl font-bold text-slate-800 dark:text-white">{driver.name}</h2>
                                 <div className="flex items-center justify-center gap-2 mt-1 text-slate-500 dark:text-slate-400 text-sm font-medium">
                                     <MapPin className="w-4 h-4" />
-                                    <span>Main Route - Sector 8</span>
+                                    <span>BUS-001</span>
                                 </div>
                             </div>
 
@@ -92,7 +123,7 @@ export default function DriverProfilePage() {
                                 </div>
                                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-center">
                                     <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider mb-1">Alerts</p>
-                                    <p className="font-extrabold text-lg text-slate-800 dark:text-white">14</p>
+                                    <p className="font-extrabold text-lg text-slate-800 dark:text-white">{alerts.length}</p>
                                 </div>
                             </div>
 
@@ -126,11 +157,11 @@ export default function DriverProfilePage() {
                             <div className="space-y-4">
                                 <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
                                     <Calendar className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                                    <span className="text-sm font-medium">Joined: Oct 2024</span>
+                                    <span className="text-sm font-medium">Registered: {driver.faceRegisteredAt}</span>
                                 </div>
                                 <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
                                     <Shield className="w-5 h-5 text-slate-400 dark:text-slate-500" />
-                                    <span className="text-sm font-medium">Safety Score: <b className="text-emerald-600 dark:text-emerald-400">92/100</b></span>
+                                    <span className="text-sm font-medium">Sessions: <b className="text-emerald-600 dark:text-emerald-400">{driver.totalSessions}</b></span>
                                 </div>
                             </div>
 
@@ -228,7 +259,7 @@ export default function DriverProfilePage() {
                         <CardContent>
                             <div className="h-[300px] w-full">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={DROWSINESS_INCIDENTS}>
+                                    <LineChart data={drowsinessIncidents}>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                         <XAxis
                                             dataKey="day"
@@ -312,18 +343,20 @@ export default function DriverProfilePage() {
                         </CardHeader>
                         <CardContent className="p-0">
                             <div className="divide-y dark:divide-slate-800">
-                                {[1, 2, 3].map((i) => (
-                                    <div key={i} className="flex items-center justify-between p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                {alerts.length === 0 ? (
+                                    <div className="p-6 text-center text-slate-400 dark:text-slate-500 text-sm">No alerts recorded</div>
+                                ) : alerts.slice(0, 5).map((alert) => (
+                                    <div key={alert.id} className="flex items-center justify-between p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <div className="flex items-start gap-4">
-                                            <div className="p-3 rounded-xl bg-orange-100 dark:bg-orange-900/30">
-                                                <AlertTriangle className="w-5 h-5 text-brand-orange" />
+                                            <div className={`p-3 rounded-xl ${alert.severity === 'critical' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-orange-100 dark:bg-orange-900/30'}`}>
+                                                <AlertTriangle className={`w-5 h-5 ${alert.severity === 'critical' ? 'text-brand-red' : 'text-brand-orange'}`} />
                                             </div>
                                             <div>
-                                                <p className="font-bold text-slate-800 dark:text-white">Drowsiness Level 3</p>
-                                                <p className="text-sm text-slate-500 dark:text-slate-400">Jan 16, 2026 • 10:45 AM • Route 8A</p>
+                                                <p className="font-bold text-slate-800 dark:text-white">{alert.message}</p>
+                                                <p className="text-sm text-slate-500 dark:text-slate-400">{alert.timestamp}</p>
                                             </div>
                                         </div>
-                                        <Button variant="ghost" size="sm" className="text-brand-red font-bold">Details</Button>
+                                        <StatusBadge status={alert.status} />
                                     </div>
                                 ))}
                             </div>
@@ -338,7 +371,7 @@ export default function DriverProfilePage() {
                             <textarea
                                 className="w-full min-h-[120px] p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-slate-500/20 transition-all resize-none font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500"
                                 placeholder="Add private notes about this driver's performance..."
-                                defaultValue="Driver showed significant improvement in the last 48 hours. Continue monitoring during early morning shifts."
+                                defaultValue=""
                             />
                             <div className="mt-4 flex justify-end">
                                 <Button className="bg-brand-red hover:bg-brand-red/90 text-white h-10 px-6 font-bold shadow-lg shadow-brand-red/20">Save Notes</Button>

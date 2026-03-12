@@ -1,6 +1,7 @@
 'use client';
 
-import { Bell, Search, User, LogOut, Settings as SettingsIcon, Moon, Sun, Menu } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Bell, Search, User, LogOut, Settings as SettingsIcon, Moon, Sun, Menu, AlertTriangle, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -12,9 +13,26 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { useUIStore } from '@/store/useUIStore';
+import { domainApi, type AlertRecord } from '@/lib/api';
 
 export function Topbar() {
     const { theme, toggleTheme, logout, toggleSidebar } = useUIStore();
+    const [alerts, setAlerts] = useState<AlertRecord[]>([]);
+    const [lastSeenCount, setLastSeenCount] = useState(0);
+
+    const fetchAlerts = useCallback(() => {
+        domainApi.getAlerts()
+            .then(data => setAlerts(data))
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        fetchAlerts();
+        const interval = setInterval(fetchAlerts, 10000);
+        return () => clearInterval(interval);
+    }, [fetchAlerts]);
+
+    const unreadCount = Math.max(0, alerts.length - lastSeenCount);
 
     return (
         <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 px-4 md:px-6 backdrop-blur-md bg-white/80 dark:bg-slate-900/80">
@@ -47,12 +65,47 @@ export function Topbar() {
                     {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
                 </Button>
 
-                <div className="relative">
-                    <Button variant="outline" size="icon" className="rounded-full relative border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                        <Bell className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-                        <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-brand-red border-2 border-white dark:border-slate-900"></span>
-                    </Button>
-                </div>
+                <DropdownMenu onOpenChange={(open) => { if (open) setLastSeenCount(alerts.length); }}>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="icon" className="rounded-full relative border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                            <Bell className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+                            {unreadCount > 0 && (
+                                <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-brand-red text-white text-[10px] font-bold flex items-center justify-center border-2 border-white dark:border-slate-900">
+                                    {unreadCount > 9 ? '9+' : unreadCount}
+                                </span>
+                            )}
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-80 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-h-96 overflow-y-auto">
+                        <DropdownMenuLabel className="dark:text-slate-300 flex items-center justify-between">
+                            <span>Notifications</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{alerts.length} total</span>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator className="dark:bg-slate-800" />
+                        {alerts.length === 0 ? (
+                            <div className="px-4 py-6 text-center text-sm text-slate-400 dark:text-slate-500">No notifications yet</div>
+                        ) : (
+                            alerts.slice(0, 10).map(alert => (
+                                <DropdownMenuItem key={alert.id} className="cursor-pointer dark:text-slate-300 dark:hover:bg-slate-800 flex items-start gap-3 py-3">
+                                    <div className={`mt-0.5 p-1.5 rounded-lg shrink-0 ${alert.severity === 'critical' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-orange-100 dark:bg-orange-900/30'}`}>
+                                        {alert.type === 'drowsiness' ? (
+                                            <EyeOff className={`h-3.5 w-3.5 ${alert.severity === 'critical' ? 'text-brand-red' : 'text-brand-orange'}`} />
+                                        ) : (
+                                            <AlertTriangle className={`h-3.5 w-3.5 ${alert.severity === 'critical' ? 'text-brand-red' : 'text-brand-orange'}`} />
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-slate-800 dark:text-white truncate">{alert.alarmType || alert.type}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{alert.driver} &bull; {alert.timestamp}</p>
+                                    </div>
+                                    <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${alert.severity === 'critical' ? 'text-brand-red' : 'text-brand-orange'}`}>
+                                        {alert.severity}
+                                    </span>
+                                </DropdownMenuItem>
+                            ))
+                        )}
+                    </DropdownMenuContent>
+                </DropdownMenu>
 
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>

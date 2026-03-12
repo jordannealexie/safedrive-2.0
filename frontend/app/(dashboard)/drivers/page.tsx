@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MOCK_DRIVERS } from '@/lib/mock-data';
+import { domainApi, type Driver } from '@/lib/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,10 +19,13 @@ import { cn } from '@/lib/utils';
 
 export default function DriversPage() {
     const [isLoading, setIsLoading] = useState(true);
+    const [drivers, setDrivers] = useState<Driver[]>([]);
 
     useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 1000);
-        return () => clearTimeout(timer);
+        domainApi.getDrivers()
+            .then(setDrivers)
+            .catch(console.error)
+            .finally(() => setIsLoading(false));
     }, []);
 
     const SkeletonRow = () => (
@@ -89,7 +92,7 @@ export default function DriversPage() {
                             {isLoading ? (
                                 Array(5).fill(0).map((_, i) => <SkeletonRow key={i} />)
                             ) : (
-                                MOCK_DRIVERS.map((driver, index) => (
+                                drivers.map((driver, index) => (
                                     <motion.tr
                                         key={driver.id}
                                         initial={{ opacity: 0, x: -10 }}
@@ -186,7 +189,7 @@ export default function DriversPage() {
                 </div>
 
                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 flex items-center justify-between">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Showing {MOCK_DRIVERS.length} registered drivers</p>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Showing {drivers.length} registered drivers</p>
                     <div className="flex gap-1">
                         <Button variant="ghost" size="sm" disabled className="text-slate-400 text-xs font-black uppercase">Prev</Button>
                         <Button variant="ghost" size="sm" className="text-brand-red font-black">1</Button>

@@ -3,7 +3,7 @@
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { BUSES } from '@/lib/mock-data';
+import { useLiveSensor } from '@/hooks/useLiveSensor';
 import { useUIStore } from '@/store/useUIStore';
 
 // Fix Leaflet icon issue
@@ -16,11 +16,16 @@ const icon = L.icon({
 
 export default function MiniLiveMap() {
     const { theme } = useUIStore();
+    const { data: sensorData } = useLiveSensor();
+
+    const lat = sensorData?.gps?.latitude ?? 14.5995;
+    const lng = sensorData?.gps?.longitude ?? 120.9842;
+    const position: [number, number] = [lat, lng];
     
     return (
         <div className="h-full w-full">
             <MapContainer
-                center={[14.5995, 120.9842]} 
+                center={position} 
                 zoom={12}
                 scrollWheelZoom={false}
                 zoomControl={false}
@@ -33,23 +38,20 @@ export default function MiniLiveMap() {
                         : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                     }
                 />
-                {BUSES.slice(0, 3).map((bus) => (
-                    <Marker 
-                        key={bus.id} 
-                        position={bus.location as [number, number]} 
-                        icon={icon}
-                    >
-                        <Circle 
-                            center={bus.location as [number, number]}
-                            radius={400}
-                            pathOptions={{ 
-                                color: '#ED1E24', 
-                                fillColor: '#ED1E24', 
-                                fillOpacity: 0.1 
-                            }}
-                        />
-                    </Marker>
-                ))}
+                <Marker 
+                    position={position} 
+                    icon={icon}
+                >
+                    <Circle 
+                        center={position}
+                        radius={400}
+                        pathOptions={{ 
+                            color: '#ED1E24', 
+                            fillColor: '#ED1E24', 
+                            fillOpacity: 0.1 
+                        }}
+                    />
+                </Marker>
             </MapContainer>
         </div>
     );

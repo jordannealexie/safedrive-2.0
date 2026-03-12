@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BUSES } from '@/lib/mock-data';
+import { domainApi, type BusRecord } from '@/lib/api';
+import { useLiveSensor } from '@/hooks/useLiveSensor';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,11 +22,22 @@ import { cn } from '@/lib/utils';
 
 export default function BusesPage() {
     const [isLoading, setIsLoading] = useState(true);
+    const [buses, setBuses] = useState<BusRecord[]>([]);
+    const { data: sensorData } = useLiveSensor();
 
     useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 1000);
-        return () => clearTimeout(timer);
+        domainApi.getBuses()
+            .then(setBuses)
+            .catch(console.error)
+            .finally(() => setIsLoading(false));
     }, []);
+
+    // Enrich bus data with live sensor readings
+    const liveBuses = buses.map(bus => ({
+        ...bus,
+        speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed,
+        status: sensorData ? (sensorData.is_moving ? 'Online' : 'Stationary') : bus.status,
+    }));
 
     const SkeletonCard = () => (
         <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
@@ -67,7 +79,7 @@ export default function BusesPage() {
                 {isLoading ? (
                     Array(4).fill(0).map((_, i) => <SkeletonCard key={i} />)
                 ) : (
-                    BUSES.map((bus, index) => (
+                    liveBuses.map((bus, index) => (
                         <motion.div
                             key={bus.id}
                             initial={{ opacity: 0, y: 20 }}

@@ -9,6 +9,8 @@ import { Bus, Navigation, Activity, Zap, Search, Eye, EyeOff, ShieldAlert, Brain
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLiveSensor } from '@/hooks/useLiveSensor';
+import { domainApi, type BusRecord } from '@/lib/api';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false }) as any;
@@ -16,17 +18,32 @@ const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLaye
 const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false }) as any;
 const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), { ssr: false }) as any;
 
-const MOCK_LOCATIONS = [
-    { id: 'BUS-001', lat: 14.5995, lng: 120.9842, driver: 'Driver 1', status: 'Normal', speed: '45 km/h', lastAlert: 'None', session: 'SES-20260312-001', detectionStatus: 'monitoring', baselineStatus: 'learned', baselineConfidence: 92, baselineDeviation: 5, sessionDuration: '3h 12m', todayWorkHours: 3.2, vehicleMoving: true },
-];
+interface LiveLocation {
+    id: string;
+    lat: number;
+    lng: number;
+    driver: string;
+    status: string;
+    speed: string;
+    lastAlert: string;
+    session: string;
+    detectionStatus: string;
+    baselineStatus: string;
+    baselineConfidence: number;
+    baselineDeviation: number;
+    sessionDuration: string;
+    todayWorkHours: number;
+    vehicleMoving: boolean;
+}
 
 export default function LiveMonitoringPage() {
-    const [selectedBus, setSelectedBus] = useState<typeof MOCK_LOCATIONS[0] | null>(null);
+    const [selectedBus, setSelectedBus] = useState<LiveLocation | null>(null);
     const [isClient, setIsClient] = useState(false);
+    const { data: sensorData, connected } = useLiveSensor();
+    const [buses, setBuses] = useState<BusRecord[]>([]);
 
     useEffect(() => {
         setIsClient(true);
-        // Fix leaflet marker icon issues
         import('leaflet').then(L => {
             delete (L.Icon.Default.prototype as any)._getIconUrl;
             L.Icon.Default.mergeOptions({
@@ -35,7 +52,32 @@ export default function LiveMonitoringPage() {
                 shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
             });
         });
+        domainApi.getBuses().then(setBuses).catch(console.error);
     }, []);
+
+    // Build live locations from sensor data + bus records
+    const raw = sensorData?.oled?.raw as Record<string, unknown> | undefined;
+    const liveLocations: LiveLocation[] = buses.map(bus => ({
+        id: bus.id,
+        lat: sensorData?.gps?.latitude ?? bus.location[0],
+        lng: sensorData?.gps?.longitude ?? bus.location[1],
+        driver: raw?.driver_id as string ?? bus.driver,
+        status: raw?.drowsiness_state as string ?? (sensorData?.is_moving ? 'Normal' : 'Stationary'),
+        speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed,
+        lastAlert: 'N/A',
+        session: bus.sessionId,
+        detectionStatus: bus.detectionStatus,
+        baselineStatus: raw ? 'active' : 'idle',
+        baselineConfidence: 0,
+        baselineDeviation: 0,
+        sessionDuration: '—',
+        todayWorkHours: 0,
+        vehicleMoving: sensorData?.is_moving ?? false,
+    }));
+
+    const mapCenter: [number, number] = sensorData?.gps?.latitude != null
+        ? [sensorData.gps.latitude, sensorData.gps.longitude!]
+        : [14.5995, 120.9842];
 
     return (
         <div className="h-[calc(100vh-120px)] flex flex-col gap-6">
@@ -45,6 +87,10 @@ export default function LiveMonitoringPage() {
                     <p className="text-slate-500 dark:text-slate-400 font-medium">Real-time GPS tracking and drowsiness status for the prototype unit.</p>
                 </div>
                 <div className="flex gap-4">
+                    <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{connected ? 'Live' : 'Disconnected'}</span>
+                    </div>
                     <div className="relative w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
                         <Input placeholder="Search active driver..." className="pl-10 h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:text-white shadow-sm" />
@@ -57,7 +103,7 @@ export default function LiveMonitoringPage() {
                 <div className="flex-1 rounded-3xl overflow-hidden border-4 border-white dark:border-slate-800 shadow-2xl relative z-10 bg-slate-200 dark:bg-slate-900">
                     {isClient ? (
                         <MapContainer
-                            center={[14.5995, 120.9842]}
+                            center={mapCenter}
                             zoom={13}
                             style={{ height: '100%', width: '100%' }}
                             zoomControl={false}
@@ -66,7 +112,7 @@ export default function LiveMonitoringPage() {
                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                             />
-                            {MOCK_LOCATIONS.map((bus) => (
+                            {liveLocations.map((bus) => (
                                 <Marker
                                     key={bus.id}
                                     position={[bus.lat, bus.lng]}

@@ -15,7 +15,8 @@ import {
 import dynamic from 'next/dynamic';
 import { StatCard } from './components/StatCard';
 import { ChartCard } from './components/ChartCard';
-import { DASHBOARD_STATS, DROWSINESS_INCIDENTS, PEAK_HOURS, RECENT_ALERTS, DETECTION_FEED, DRIVER_SESSIONS, WORK_HOURS_DATA } from '@/lib/mock-data';
+import { domainApi, type DashboardData, type DriverSession, type WorkHours } from '@/lib/api';
+import { useLiveSensor } from '@/hooks/useLiveSensor';
 import { Button } from '@/components/ui/button';
 import { Download, Filter, Plus, ExternalLink, ShieldAlert, Eye, EyeOff, Volume2, Monitor, Clock, UserCheck, Brain, Activity } from 'lucide-react';
 import { useUIStore } from '@/store/useUIStore';
@@ -51,10 +52,25 @@ const getDetectionLabel = (type: string) => {
 export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const { theme } = useUIStore();
+    const { data: sensorData, connected } = useLiveSensor();
+
+    const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+    const [sessions, setSessions] = useState<DriverSession[]>([]);
+    const [workHours, setWorkHours] = useState<WorkHours[]>([]);
 
     useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 1200);
-        return () => clearTimeout(timer);
+        Promise.all([
+            domainApi.getDashboard(),
+            domainApi.getSessions(),
+            domainApi.getWorkHours(),
+        ])
+            .then(([dash, sess, wh]) => {
+                setDashboard(dash);
+                setSessions(sess);
+                setWorkHours(wh);
+            })
+            .catch(console.error)
+            .finally(() => setIsLoading(false));
     }, []);
 
     const chartGridColor = theme === 'dark' ? '#1e293b' : '#f1f5f9';
@@ -82,7 +98,7 @@ export default function DashboardPage() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {DASHBOARD_STATS.map((stat, index) => (
+                {(dashboard?.stats ?? []).map((stat, index) => (
                     <StatCard
                         key={stat.label}
                         {...stat}
@@ -102,7 +118,7 @@ export default function DashboardPage() {
                     delay={0.2}
                 >
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={DROWSINESS_INCIDENTS}>
+                        <AreaChart data={dashboard?.drowsinessIncidents ?? []}>
                             <defs>
                                 <linearGradient id="colorIncidents" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ED1E24" stopOpacity={0.15} />
@@ -150,7 +166,7 @@ export default function DashboardPage() {
                     delay={0.3}
                 >
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={PEAK_HOURS}>
+                        <BarChart data={dashboard?.peakHours ?? []}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartGridColor} />
                             <XAxis
                                 dataKey="hour"
@@ -207,7 +223,7 @@ export default function DashboardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {(RECENT_ALERTS || []).slice(0, 4).map((alert) => (
+                                    {(dashboard?.recentAlerts ?? []).slice(0, 4).map((alert) => (
                                         <tr key={alert.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
@@ -268,7 +284,7 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {DETECTION_FEED.map((event, i) => (
+                            {(dashboard?.detectionFeed ?? []).map((event, i) => (
                                 <motion.div
                                     key={event.id}
                                     initial={{ opacity: 0, x: -10 }}
@@ -311,13 +327,13 @@ export default function DashboardPage() {
                         <CardTitle className="text-lg font-black dark:text-white">Active Sessions & Work Hours</CardTitle>
                         <div className="flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{DRIVER_SESSIONS.filter(s => s.status === 'active').length} Active</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{sessions.filter(s => s.status === 'active').length} Active</span>
                         </div>
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {WORK_HOURS_DATA.map((wh, i) => {
-                                const session = DRIVER_SESSIONS.find(s => s.driverId === wh.driverId && s.status === 'active');
+                            {workHours.map((wh, i) => {
+                                const session = sessions.find(s => s.driverId === wh.driverId && s.status === 'active');
                                 const percentage = Math.min((wh.todayTotal / 8) * 100, 100);
                                 return (
                                     <motion.div

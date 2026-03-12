@@ -18,20 +18,24 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from '@/lib/utils';
-
-const REPORTS = [
-    { id: 1, title: 'Weekly Fleet Safety Metric', date: 'Jan 15, 2026', size: '2.4 MB', type: 'PDF' },
-    { id: 2, title: 'Network Operational Efficiency', date: 'Jan 10, 2026', size: '5.1 MB', type: 'Excel' },
-    { id: 3, title: 'Personnel Vigilance Diagnostic', date: 'Jan 01, 2026', size: '1.8 MB', type: 'PDF' },
-    { id: 4, title: 'Hardware Health Census', date: 'Dec 28, 2025', size: '3.2 MB', type: 'PDF' },
-];
+import { domainApi } from '@/lib/api';
 
 export default function ReportsPage() {
     const [isLoading, setIsLoading] = useState(true);
+    const [totalAlerts, setTotalAlerts] = useState(0);
+    const [resolvedAlerts, setResolvedAlerts] = useState(0);
+    const [driverCount, setDriverCount] = useState(0);
+    const [sessionCount, setSessionCount] = useState(0);
 
     useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 800);
-        return () => clearTimeout(timer);
+        Promise.all([
+            domainApi.getAlerts().then(alerts => {
+                setTotalAlerts(alerts.length);
+                setResolvedAlerts(alerts.filter((a: any) => a.status === 'Resolved').length);
+            }),
+            domainApi.getDrivers().then(d => setDriverCount(d.length)),
+            domainApi.getSessions().then(s => setSessionCount(s.length)),
+        ]).catch(console.error).finally(() => setIsLoading(false));
     }, []);
 
     const SkeletonStat = () => (
@@ -83,10 +87,10 @@ export default function ReportsPage() {
                                 </div>
                                 <CardHeader>
                                     <CardTitle className="text-white/80 text-[10px] font-black uppercase tracking-[0.2em]">Safety Compliance</CardTitle>
-                                    <p className="text-4xl font-black mt-2">94.2%</p>
+                                    <p className="text-4xl font-black mt-2">{totalAlerts > 0 ? `${Math.round((resolvedAlerts / totalAlerts) * 100)}%` : '—'}</p>
                                 </CardHeader>
                                 <CardContent>
-                                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest">+2.4% PERFORMANCE GAIN</p>
+                                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest">{resolvedAlerts} / {totalAlerts} ALERTS RESOLVED</p>
                                 </CardContent>
                             </Card>
                         </motion.div>
@@ -98,10 +102,10 @@ export default function ReportsPage() {
                                 </div>
                                 <CardHeader>
                                     <CardTitle className="text-white/80 text-[10px] font-black uppercase tracking-[0.2em]">Alert Resolution</CardTitle>
-                                    <p className="text-4xl font-black mt-2">88.5%</p>
+                                    <p className="text-4xl font-black mt-2">{totalAlerts}</p>
                                 </CardHeader>
                                 <CardContent>
-                                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest">AVG. LATENCY: 4.2 MIN</p>
+                                    <p className="text-white/60 text-xs font-bold uppercase tracking-widest">TOTAL ALERTS LOGGED</p>
                                 </CardContent>
                             </Card>
                         </motion.div>
@@ -112,11 +116,11 @@ export default function ReportsPage() {
                                     <BarChart4 className="w-32 h-32 text-slate-800 dark:text-white" />
                                 </div>
                                 <CardHeader>
-                                    <CardTitle className="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">Fleet Operational Hours</CardTitle>
-                                    <p className="text-4xl font-black mt-2 text-slate-800 dark:text-white">1,240h</p>
+                                    <CardTitle className="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">Active Sessions</CardTitle>
+                                    <p className="text-4xl font-black mt-2 text-slate-800 dark:text-white">{sessionCount}</p>
                                 </CardHeader>
                                 <CardContent>
-                                    <p className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest">ACROSS 42 ACTIVE NODES</p>
+                                    <p className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest">{driverCount} REGISTERED DRIVER{driverCount !== 1 ? 'S' : ''}</p>
                                 </CardContent>
                             </Card>
                         </motion.div>
@@ -136,44 +140,11 @@ export default function ReportsPage() {
                     {isLoading ? (
                         Array(4).fill(0).map((_, i) => <SkeletonReport key={i} />)
                     ) : (
-                        REPORTS.map((report, index) => (
-                            <motion.div
-                                key={report.id}
-                                initial={{ opacity: 0, x: -20 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                transition={{ delay: index * 0.1 }}
-                                className="group flex flex-col md:flex-row md:items-center justify-between p-6 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm hover:shadow-2xl transition-all hover:border-brand-red/20"
-                            >
-                                <div className="flex items-center gap-5">
-                                    <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:bg-brand-red/10 group-hover:text-brand-red group-hover:border-brand-red/20 transition-all">
-                                        <FileText className="w-7 h-7" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 group-hover:text-brand-red transition-colors">{report.title}</h3>
-                                        <div className="flex items-center gap-4 mt-1 text-slate-400 dark:text-slate-500 font-bold text-[10px] uppercase tracking-widest">
-                                            <span className="flex items-center gap-1">
-                                                <Calendar className="w-3 h-3" /> {report.date}
-                                            </span>
-                                            <span className="w-1 h-1 rounded-full bg-slate-200 dark:bg-slate-800" />
-                                            <span>{report.size}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3 mt-4 md:mt-0">
-                                    <div className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest border border-slate-200 dark:border-slate-700">
-                                        {report.type}
-                                    </div>
-                                    <div className="flex gap-1">
-                                        <Button variant="ghost" size="icon" className="rounded-xl hover:bg-brand-red/10 hover:text-brand-red text-slate-400 transition-colors">
-                                            <Download className="w-5 h-5" />
-                                        </Button>
-                                        <Button variant="ghost" size="icon" className="rounded-xl hover:bg-brand-red/10 hover:text-brand-red text-slate-400 transition-colors">
-                                            <ChevronRight className="w-5 h-5" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        ))
+                        <div className="p-12 text-center text-slate-400 dark:text-slate-600">
+                            <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                            <p className="font-bold text-sm">No reports generated yet.</p>
+                            <p className="text-xs mt-1">Reports will appear as the system collects drowsiness events.</p>
+                        </div>
                     )}
                 </div>
             </div>

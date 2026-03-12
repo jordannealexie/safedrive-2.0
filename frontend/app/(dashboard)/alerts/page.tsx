@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MOCK_ALERTS } from '@/lib/mock-data';
+import { domainApi, type AlertRecord } from '@/lib/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,10 +27,13 @@ import { cn } from '@/lib/utils';
 
 export default function AlertsPage() {
     const [isLoading, setIsLoading] = useState(true);
+    const [alerts, setAlerts] = useState<AlertRecord[]>([]);
 
     useEffect(() => {
-        const timer = setTimeout(() => setIsLoading(false), 800);
-        return () => clearTimeout(timer);
+        domainApi.getAlerts()
+            .then(setAlerts)
+            .catch(console.error)
+            .finally(() => setIsLoading(false));
     }, []);
 
     const SkeletonStat = () => (
@@ -83,7 +86,7 @@ export default function AlertsPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">High Criticality</p>
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">08</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(alerts.filter(a => a.severity === 'High').length).padStart(2, '0')}</p>
                             </div>
                         </div>
                         <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -92,7 +95,7 @@ export default function AlertsPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Audit</p>
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">14</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(alerts.filter(a => a.status === 'Active').length).padStart(2, '0')}</p>
                             </div>
                         </div>
                         <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -101,7 +104,7 @@ export default function AlertsPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resolved Cycles</p>
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">22</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(alerts.filter(a => a.status === 'Resolved').length).padStart(2, '0')}</p>
                             </div>
                         </div>
                     </>
@@ -139,7 +142,7 @@ export default function AlertsPage() {
                             {isLoading ? (
                                 Array(5).fill(0).map((_, i) => <SkeletonRow key={i} />)
                             ) : (
-                                MOCK_ALERTS.map((alert, index) => (
+                                alerts.map((alert, index) => (
                                     <motion.tr
                                         key={alert.id}
                                         initial={{ opacity: 0 }}
