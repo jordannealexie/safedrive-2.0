@@ -12,6 +12,7 @@ from app.sensors import gps_read_impl, accel_read_impl
 from app.routers.sensors import router as sensors_router, system_router, update_latest_gps, update_latest_accel
 from app.routers.ws import router as ws_router
 from app.routers.domain import router as domain_router
+from app.routers.settings import router as settings_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ app.include_router(sensors_router)
 app.include_router(system_router)
 app.include_router(ws_router)
 app.include_router(domain_router)
+app.include_router(settings_router)
 
 
 @app.get("/")

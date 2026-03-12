@@ -41,6 +41,8 @@ export default function LiveMonitoringPage() {
     const [isClient, setIsClient] = useState(false);
     const { data: sensorData, connected } = useLiveSensor();
     const [buses, setBuses] = useState<BusRecord[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         setIsClient(true);
@@ -55,25 +57,41 @@ export default function LiveMonitoringPage() {
         domainApi.getBuses().then(setBuses).catch(console.error);
     }, []);
 
+    const refreshMap = async () => {
+        setRefreshing(true);
+        try { setBuses(await domainApi.getBuses()); } catch (e) { console.error(e); }
+        setRefreshing(false);
+    };
+
     // Build live locations from sensor data + bus records
     const raw = sensorData?.oled?.raw as Record<string, unknown> | undefined;
-    const liveLocations: LiveLocation[] = buses.map(bus => ({
-        id: bus.id,
-        lat: sensorData?.gps?.latitude ?? bus.location[0],
-        lng: sensorData?.gps?.longitude ?? bus.location[1],
-        driver: raw?.driver_id as string ?? bus.driver,
-        status: raw?.drowsiness_state as string ?? (sensorData?.is_moving ? 'Normal' : 'Stationary'),
-        speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed,
-        lastAlert: 'N/A',
-        session: bus.sessionId,
-        detectionStatus: bus.detectionStatus,
-        baselineStatus: raw ? 'active' : 'idle',
-        baselineConfidence: 0,
-        baselineDeviation: 0,
-        sessionDuration: '—',
-        todayWorkHours: 0,
-        vehicleMoving: sensorData?.is_moving ?? false,
-    }));
+    const DEFAULT_LAT = 14.5995;
+    const DEFAULT_LNG = 120.9842;
+    const liveLocations: LiveLocation[] = buses.map(bus => {
+        const lat = sensorData?.gps?.latitude || bus.location[0] || DEFAULT_LAT;
+        const lng = sensorData?.gps?.longitude || bus.location[1] || DEFAULT_LNG;
+        return {
+            id: bus.id,
+            lat,
+            lng,
+            driver: raw?.driver_id as string ?? bus.driver,
+            status: raw?.drowsiness_state as string ?? (sensorData?.is_moving ? 'Normal' : 'Stationary'),
+            speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed,
+            lastAlert: 'N/A',
+            session: bus.sessionId,
+            detectionStatus: bus.detectionStatus,
+            baselineStatus: raw ? 'active' : 'idle',
+            baselineConfidence: 0,
+            baselineDeviation: 0,
+            sessionDuration: '—',
+            todayWorkHours: 0,
+            vehicleMoving: sensorData?.is_moving ?? false,
+        };
+    }).filter(loc => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return loc.driver.toLowerCase().includes(q) || loc.id.toLowerCase().includes(q);
+    });
 
     const mapCenter: [number, number] = sensorData?.gps?.latitude != null
         ? [sensorData.gps.latitude, sensorData.gps.longitude!]
@@ -93,9 +111,9 @@ export default function LiveMonitoringPage() {
                     </div>
                     <div className="relative w-64">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
-                        <Input placeholder="Search active driver..." className="pl-10 h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:text-white shadow-sm" />
+                        <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search active driver..." className="pl-10 h-11 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 dark:text-white shadow-sm" />
                     </div>
-                    <Button className="bg-brand-red hover:bg-brand-red/90 h-11 px-6 shadow-lg shadow-brand-red/20 font-bold text-white">Refresh Map</Button>
+                    <Button onClick={refreshMap} disabled={refreshing} className="bg-brand-red hover:bg-brand-red/90 h-11 px-6 shadow-lg shadow-brand-red/20 font-bold text-white">{refreshing ? 'Refreshing...' : 'Refresh Map'}</Button>
                 </div>
             </div>
 
@@ -260,14 +278,6 @@ export default function LiveMonitoringPage() {
                                         </div>
                                     </div>
 
-                                    <div className="space-y-3 pt-4">
-                                        <Button className="w-full bg-brand-red hover:bg-brand-red/90 text-white h-12 shadow-lg shadow-brand-red/20 font-bold">
-                                            Emergency Alert
-                                        </Button>
-                                        <Button variant="outline" className="w-full h-12 border-slate-200 dark:border-slate-800 dark:text-slate-300">
-                                            Contact Driver
-                                        </Button>
-                                    </div>
                                 </CardContent>
                             </Card>
                         </motion.div>

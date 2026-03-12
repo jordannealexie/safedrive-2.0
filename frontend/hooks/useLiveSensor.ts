@@ -2,7 +2,15 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { getWsUrl, type LiveSensorData } from '@/lib/api';
 
 export function useLiveSensor() {
-    const [data, setData] = useState<LiveSensorData | null>(null);
+    const [data, setData] = useState<LiveSensorData | null>(() => {
+        if (typeof window !== 'undefined') {
+            try {
+                const cached = localStorage.getItem('safedrive_cache_ws_live');
+                if (cached) return JSON.parse(cached) as LiveSensorData;
+            } catch {}
+        }
+        return null;
+    });
     const [connected, setConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,6 +27,7 @@ export function useLiveSensor() {
             try {
                 const parsed: LiveSensorData = JSON.parse(event.data);
                 setData(parsed);
+                try { localStorage.setItem('safedrive_cache_ws_live', event.data); } catch {}
             } catch {
                 // ignore malformed messages
             }

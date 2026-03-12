@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
     Search,
     Filter,
     Download,
@@ -28,6 +34,9 @@ import { cn } from '@/lib/utils';
 export default function AlertsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [alerts, setAlerts] = useState<AlertRecord[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [severityFilter, setSeverityFilter] = useState<string | null>(null);
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
         domainApi.getAlerts()
@@ -35,6 +44,37 @@ export default function AlertsPage() {
             .catch(console.error)
             .finally(() => setIsLoading(false));
     }, []);
+
+    const filteredAlerts = alerts.filter(a => {
+        if (searchQuery) {
+            const q = searchQuery.toLowerCase();
+            if (!a.type.toLowerCase().includes(q) && !a.driver.toLowerCase().includes(q) && !a.sessionId.toLowerCase().includes(q)) return false;
+        }
+        if (severityFilter && a.severity !== severityFilter) return false;
+        return true;
+    });
+
+    const exportLedger = () => {
+        const lines = [
+            'ID,Type,Driver,Bus,Severity,Status,Alarm,Baseline Deviation,Session,Timestamp',
+            ...filteredAlerts.map(a =>
+                `${a.id},${a.type},${a.driver},${a.bus},${a.severity},${a.status},${a.alarmType},${a.baselineDeviation}%,${a.sessionId},${a.timestamp}`
+            ),
+        ];
+        const csv = lines.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const el = document.createElement('a');
+        el.href = url;
+        el.download = `SafeDrive_Alerts_${new Date().toISOString().split('T')[0]}.csv`;
+        el.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const sanitizeNotifications = async () => {
+        await domainApi.updateAllAlertStatus('Resolved');
+        setAlerts(prev => prev.map(a => ({ ...a, status: 'Resolved' })));
+    };
 
     const SkeletonStat = () => (
         <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
@@ -66,10 +106,10 @@ export default function AlertsPage() {
                     <p className="text-slate-500 dark:text-slate-400 font-medium">Historical trace of all drowsiness events, baseline deviations, and session alerts.</p>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" className="gap-2 border-slate-200 dark:border-slate-800 dark:text-slate-300">
+                    <Button variant="outline" onClick={exportLedger} className="gap-2 border-slate-200 dark:border-slate-800 dark:text-slate-300">
                         <Download className="w-4 h-4" /> Export Ledger
                     </Button>
-                    <Button className="bg-brand-red hover:bg-brand-red/90 text-white h-10 px-6 font-bold shadow-lg shadow-brand-red/20">
+                    <Button onClick={sanitizeNotifications} className="bg-brand-red hover:bg-brand-red/90 text-white h-10 px-6 font-bold shadow-lg shadow-brand-red/20">
                         Sanitize Notifications
                     </Button>
                 </div>
@@ -86,7 +126,7 @@ export default function AlertsPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">High Criticality</p>
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(alerts.filter(a => a.severity === 'High').length).padStart(2, '0')}</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(filteredAlerts.filter(a => a.severity === 'High').length).padStart(2, '0')}</p>
                             </div>
                         </div>
                         <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -95,7 +135,7 @@ export default function AlertsPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Audit</p>
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(alerts.filter(a => a.status === 'Active').length).padStart(2, '0')}</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(filteredAlerts.filter(a => a.status === 'Active').length).padStart(2, '0')}</p>
                             </div>
                         </div>
                         <div className="p-6 rounded-[24px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
@@ -104,7 +144,7 @@ export default function AlertsPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resolved Cycles</p>
-                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(alerts.filter(a => a.status === 'Resolved').length).padStart(2, '0')}</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white">{String(filteredAlerts.filter(a => a.status === 'Resolved').length).padStart(2, '0')}</p>
                             </div>
                         </div>
                     </>
@@ -115,14 +155,26 @@ export default function AlertsPage() {
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col lg:flex-row gap-4 justify-between bg-slate-50/30 dark:bg-slate-800/20">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search by type, driver number, or session ID..." className="pl-10 h-11 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 transition-all rounded-xl" />
+                        <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search by type, driver number, or session ID..." className="pl-10 h-11 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-900 transition-all rounded-xl" />
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline" className="gap-2 h-11 px-6 border-slate-200 dark:border-slate-800 dark:text-slate-300 font-bold">
+                        <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className={cn("gap-2 h-11 px-6 border-slate-200 dark:border-slate-800 dark:text-slate-300 font-bold", showFilters && "ring-2 ring-brand-red")}>
                             <Filter className="w-4 h-4" /> Logic Filters
                         </Button>
                     </div>
                 </div>
+                {showFilters && (
+                    <div className="px-6 pb-4 flex gap-2 flex-wrap">
+                        {[null, 'High', 'Medium', 'Low'].map(s => (
+                            <button key={s ?? 'all'} onClick={() => setSeverityFilter(s)} className={cn(
+                                "px-4 py-1.5 rounded-lg text-xs font-black transition-all",
+                                severityFilter === s ? "bg-brand-red text-white shadow-sm" : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                            )}>
+                                {s ?? 'All'}
+                            </button>
+                        ))}
+                    </div>
+                )}
 
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -142,7 +194,7 @@ export default function AlertsPage() {
                             {isLoading ? (
                                 Array(5).fill(0).map((_, i) => <SkeletonRow key={i} />)
                             ) : (
-                                alerts.map((alert, index) => (
+                                filteredAlerts.map((alert, index) => (
                                     <motion.tr
                                         key={alert.id}
                                         initial={{ opacity: 0 }}
@@ -200,9 +252,37 @@ export default function AlertsPage() {
                                             <StatusBadge status={alert.status} />
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-brand-red transition-colors">
-                                                <MoreHorizontal className="w-4 h-4" />
-                                            </Button>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-brand-red transition-colors">
+                                                        <MoreHorizontal className="w-4 h-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    {alert.status !== 'Resolved' && (
+                                                        <DropdownMenuItem onClick={async () => {
+                                                            await domainApi.updateAlertStatus(alert.id, 'Resolved');
+                                                            setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, status: 'Resolved' } : a));
+                                                        }}>
+                                                            <CheckCircle2 className="w-4 h-4 mr-2" /> Mark Resolved
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    {alert.status === 'Resolved' && (
+                                                        <DropdownMenuItem onClick={async () => {
+                                                            await domainApi.updateAlertStatus(alert.id, 'Active');
+                                                            setAlerts(prev => prev.map(a => a.id === alert.id ? { ...a, status: 'Active' } : a));
+                                                        }}>
+                                                            <AlertTriangle className="w-4 h-4 mr-2" /> Reopen
+                                                        </DropdownMenuItem>
+                                                    )}
+                                                    <DropdownMenuItem onClick={() => {
+                                                        const detail = `Alert: ${alert.type}\nDriver: ${alert.driver}\nBus: ${alert.bus}\nSeverity: ${alert.severity}\nSession: ${alert.sessionId}\nAlarm: ${alert.alarmType}\nTime: ${alert.timestamp}\nStatus: ${alert.status}`;
+                                                        alert.status !== undefined && navigator.clipboard.writeText(detail);
+                                                    }}>
+                                                        <Eye className="w-4 h-4 mr-2" /> Copy Details
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </td>
                                     </motion.tr>
                                 ))

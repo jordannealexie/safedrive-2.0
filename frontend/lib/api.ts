@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
 
@@ -11,6 +13,25 @@ export async function apiFetch<T = unknown>(path: string, options?: RequestInit)
     });
     if (!res.ok) throw new Error(`API error ${res.status}: ${res.statusText}`);
     return res.json();
+}
+
+/** Fetch with localStorage cache — returns cached data when the API is unreachable. */
+async function cachedFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
+    const cacheKey = `safedrive_cache_${path}`;
+    try {
+        const data = await apiFetch<T>(path, options);
+        if (typeof window !== 'undefined') {
+            try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
+        }
+        return data;
+    } catch {
+        // Pi API failed — try localStorage cache
+        if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) return JSON.parse(cached) as T;
+        }
+        throw new Error(`API unreachable and no cache for ${path}`);
+    }
 }
 
 export function getWsUrl(path: string): string {
@@ -84,13 +105,13 @@ export interface LiveSensorData {
 
 // Sensor API calls
 export const sensorApi = {
-    getGPS: () => apiFetch<GPSReading>('/api/sensors/gps/latest'),
-    getAccel: () => apiFetch<AccelReading>('/api/sensors/accelerometer/latest'),
-    getBuzzerStatus: () => apiFetch<BuzzerStatus>('/api/sensors/buzzer/status'),
-    getOLEDStatus: () => apiFetch<OLEDStatus>('/api/sensors/oled/status'),
-    getSystemStatus: () => apiFetch<SystemStatus>('/api/system/status'),
-    getIsMoving: () => apiFetch<{ is_moving: boolean; magnitude: number }>('/api/system/is-moving'),
-    getHealth: () => apiFetch<{ status: string; mock_mode: boolean }>('/api/system/health'),
+    getGPS: () => cachedFetch<GPSReading>('/api/sensors/gps/latest'),
+    getAccel: () => cachedFetch<AccelReading>('/api/sensors/accelerometer/latest'),
+    getBuzzerStatus: () => cachedFetch<BuzzerStatus>('/api/sensors/buzzer/status'),
+    getOLEDStatus: () => cachedFetch<OLEDStatus>('/api/sensors/oled/status'),
+    getSystemStatus: () => cachedFetch<SystemStatus>('/api/system/status'),
+    getIsMoving: () => cachedFetch<{ is_moving: boolean; magnitude: number }>('/api/system/is-moving'),
+    getHealth: () => cachedFetch<{ status: string; mock_mode: boolean }>('/api/system/health'),
 
     triggerBuzzer: (duration_ms = 500) =>
         apiFetch<BuzzerStatus>('/api/sensors/buzzer/trigger', {
@@ -257,12 +278,242 @@ export interface DriverDetail {
     workHours: WorkHours | null;
 }
 
+// ---------------------------------------------------------------------------
+// Supabase fallback helpers (used when Pi API is unreachable, e.g. on Vercel)
+// ---------------------------------------------------------------------------
+
+function mapDriverRow(r: Record<string, unknown>): Driver {
+    return {
+        id: r.id as string,
+        name: (r.name as string) || (r.id as string),
+        busId: (r.bus_id as string) || 'BUS-001',
+        status: (r.status as string) || 'Normal',
+        lastAlert: (r.last_alert as string) || 'N/A',
+        riskLevel: (r.risk_level as string) || 'Low',
+        avatar: '',
+        faceRegistered: (r.face_registered as boolean) ?? true,
+        faceRegisteredAt: (r.face_registered_at as string) || '',
+        totalSessions: (r.total_sessions as number) || 0,
+        todayWorkHours: (r.today_work_hours as number) || 0,
+        todaySessions: (r.today_sessions as number) || 0,
+        detectionStatus: (r.detection_status as string) || 'monitoring',
+        baselineStatus: (r.baseline_status as string) || 'learned',
+        baselineConfidence: (r.baseline_confidence as number) || 80,
+    };
+}
+
+function mapAlertRow(r: Record<string, unknown>): AlertRecord {
+    return {
+        id: r.id as string,
+        type: r.type as string,
+        driver: r.driver as string,
+        bus: (r.bus as string) || 'BUS-001',
+        timestamp: r.timestamp as string,
+        location: '',
+        status: (r.status as string) || 'Active',
+        severity: (r.severity as string) || 'Medium',
+        sessionId: (r.session_id as string) || '',
+        alarmType: (r.alarm_type as string) || 'buzzer_oled',
+        baselineDeviation: 0,
+    };
+}
+
+function mapSessionRow(r: Record<string, unknown>): DriverSession {
+    return {
+        id: r.id as string,
+        driverId: r.driver_id as string,
+        driver: (r.driver as string) || '',
+        busId: (r.bus_id as string) || 'BUS-001',
+        startTime: (r.start_time as string) || '',
+        endTime: (r.end_time as string) || null,
+        duration: '',
+        status: (r.status as string) || 'completed',
+        alertCount: (r.alert_count as number) || 0,
+        baselineStatus: 'learned',
+        baselineConfidence: 80,
+        drowsinessEvents: (r.drowsiness_events as number) || 0,
+    };
+}
+
+async function supabaseFallback<T>(table: string, mapper: (r: Record<string, unknown>) => unknown, orderCol = 'created_at'): Promise<T> {
+    const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .order(orderCol, { ascending: false })
+        .limit(200);
+    if (error) throw error;
+    return (data || []).map(mapper) as T;
+}
+
 export const domainApi = {
-    getDashboard: () => apiFetch<DashboardData>('/api/dashboard/stats'),
-    getDrivers: () => apiFetch<Driver[]>('/api/drivers'),
-    getDriver: (id: string) => apiFetch<DriverDetail>(`/api/drivers/${encodeURIComponent(id)}`),
-    getSessions: () => apiFetch<DriverSession[]>('/api/sessions'),
-    getWorkHours: () => apiFetch<WorkHours[]>('/api/work-hours'),
-    getAlerts: () => apiFetch<AlertRecord[]>('/api/alerts'),
-    getBuses: () => apiFetch<BusRecord[]>('/api/buses'),
+    getDashboard: async (): Promise<DashboardData> => {
+        try {
+            return await cachedFetch<DashboardData>('/api/dashboard/stats');
+        } catch {
+            // Build dashboard from Supabase tables
+            const [drivers, alerts, eventStats] = await Promise.all([
+                supabase.from('drivers').select('*').then(r => r.data || []),
+                supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(50).then(r => r.data || []),
+                supabase.from('event_stats').select('*').then(r => r.data || []),
+            ]);
+            const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const hourLabels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'];
+            const byDay: Record<number, number> = {};
+            const byHour: Record<number, number> = {};
+            eventStats.forEach((r: { stat_type: string; stat_key: number; count: number }) => {
+                if (r.stat_type === 'daily') byDay[r.stat_key] = r.count;
+                if (r.stat_type === 'hourly') byHour[r.stat_key] = r.count;
+            });
+
+            return {
+                stats: [
+                    { label: 'Registered Drivers', value: String(drivers.length), trend: '', icon: 'Users' },
+                    { label: 'Drowsy Today', value: String(alerts.length), trend: '', icon: 'UserX', color: 'text-brand-red' },
+                    { label: 'Alerts Today', value: String(alerts.length), trend: '', icon: 'AlertTriangle' },
+                    { label: 'Active Sessions', value: '0', trend: '', icon: 'Cpu' },
+                ],
+                drowsinessIncidents: dayNames.map((d, i) => ({ day: d, incidents: byDay[i] || 0 })),
+                peakHours: hourLabels.map(h => ({ hour: h, incidents: byHour[parseInt(h)] || 0 })),
+                recentAlerts: alerts.slice(0, 5).map((a: Record<string, unknown>) => ({
+                    id: a.id as string,
+                    type: a.type as string,
+                    driver: a.driver as string,
+                    time: a.timestamp as string,
+                    status: (a.status as string) || 'Active',
+                    sessionId: (a.session_id as string) || '',
+                    alarmTriggered: true,
+                })),
+                detectionFeed: [],
+            };
+        }
+    },
+    getDrivers: async (): Promise<Driver[]> => {
+        try { return await cachedFetch<Driver[]>('/api/drivers'); }
+        catch { return supabaseFallback<Driver[]>('drivers', mapDriverRow, 'first_seen'); }
+    },
+    getDriver: async (id: string): Promise<DriverDetail> => {
+        try { return await cachedFetch<DriverDetail>(`/api/drivers/${encodeURIComponent(id)}`); }
+        catch {
+            const { data } = await supabase.from('drivers').select('*').eq('id', id).single();
+            if (!data) throw new Error('Driver not found');
+            const { data: sessData } = await supabase.from('sessions').select('*').eq('driver_id', id).order('created_at', { ascending: false });
+            return {
+                driver: mapDriverRow(data),
+                sessions: (sessData || []).map(mapSessionRow),
+                workHours: null,
+            };
+        }
+    },
+    getSessions: async (): Promise<DriverSession[]> => {
+        try { return await cachedFetch<DriverSession[]>('/api/sessions'); }
+        catch { return supabaseFallback<DriverSession[]>('sessions', mapSessionRow); }
+    },
+    getWorkHours: () => cachedFetch<WorkHours[]>('/api/work-hours'),
+    getAlerts: async (): Promise<AlertRecord[]> => {
+        // Always read from Supabase so status mutations are reflected
+        try {
+            const { data, error } = await supabase
+                .from('alerts')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(200);
+            if (error) throw error;
+            if (data && data.length > 0) return data.map(mapAlertRow);
+        } catch {}
+        // Fallback to Pi API / cache
+        return cachedFetch<AlertRecord[]>('/api/alerts');
+    },
+    getBuses: () => cachedFetch<BusRecord[]>('/api/buses'),
+
+    // --- Mutations (write directly to Supabase) ---
+    updateAlertStatus: async (id: string, status: string) => {
+        await supabase.from('alerts').update({ status }).eq('id', id);
+    },
+    updateAllAlertStatus: async (status: string) => {
+        await supabase.from('alerts').update({ status }).neq('id', '');
+    },
+    deleteDriver: async (id: string) => {
+        await supabase.from('alerts').delete().eq('driver', id);
+        await supabase.from('sessions').delete().eq('driver_id', id);
+        await supabase.from('event_stats').delete().eq('driver_id', id);
+        await supabase.from('driver_notes').delete().eq('driver_id', id);
+        await supabase.from('drivers').delete().eq('id', id);
+    },
+
+    // --- Driver Notes ---
+    getDriverNotes: async (driverId: string): Promise<string> => {
+        const { data } = await supabase
+            .from('driver_notes')
+            .select('content')
+            .eq('driver_id', driverId)
+            .single();
+        return data?.content || '';
+    },
+    saveDriverNotes: async (driverId: string, content: string) => {
+        await supabase
+            .from('driver_notes')
+            .upsert({ driver_id: driverId, content, updated_at: new Date().toISOString() });
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Settings API
+// ---------------------------------------------------------------------------
+
+export interface SettingsData {
+    general: {
+        timezone: string;
+        temperatureUnit: string;
+        compactDashboard: boolean;
+        highContrast: boolean;
+    };
+    alertThresholds: {
+        drowsinessConfidence: number;
+        continuousDrowsinessDuration: number;
+        baselineDeviationThreshold: number;
+        motionRequirement: boolean;
+    };
+    notifications: {
+        vehicleBuzzer: boolean;
+        oledDisplay: boolean;
+        previewMessage: string;
+        browserAudio: boolean;
+        emailSummaries: boolean;
+    };
+    driverRules: {
+        maxContinuousDriving: number;
+        mandatoryRestingBlock: number;
+        alertGracePeriod: number;
+    };
+}
+
+const DEFAULT_SETTINGS: SettingsData = {
+    general: { timezone: 'Local', temperatureUnit: 'Celsius', compactDashboard: false, highContrast: false },
+    alertThresholds: { drowsinessConfidence: 75, continuousDrowsinessDuration: 3, baselineDeviationThreshold: 30, motionRequirement: true },
+    notifications: { vehicleBuzzer: true, oledDisplay: true, previewMessage: 'Drowsiness Alert!', browserAudio: false, emailSummaries: false },
+    driverRules: { maxContinuousDriving: 4, mandatoryRestingBlock: 15, alertGracePeriod: 10 },
+};
+
+export const settingsApi = {
+    get: async (): Promise<SettingsData> => {
+        try { return await cachedFetch<SettingsData>('/api/settings'); }
+        catch {
+            // Read from Supabase settings table
+            const { data } = await supabase.from('settings').select('data').eq('id', 1).single();
+            if (data?.data) return { ...DEFAULT_SETTINGS, ...data.data } as SettingsData;
+            return DEFAULT_SETTINGS;
+        }
+    },
+    update: (data: Partial<SettingsData>) =>
+        apiFetch<SettingsData>('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        }),
+    updateSection: (section: string, data: Record<string, unknown>) =>
+        apiFetch<Record<string, unknown>>(`/api/settings/${encodeURIComponent(section)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        }),
 };

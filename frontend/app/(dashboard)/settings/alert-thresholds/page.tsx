@@ -1,12 +1,46 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Save, Zap, AlertTriangle, ShieldCheck } from "lucide-react";
+import { Save, Zap, AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { settingsApi } from '@/lib/api';
 
 export default function AlertThresholdsPage() {
+    const [drowsinessConfidence, setDrowsinessConfidence] = useState(75);
+    const [continuousDuration, setContinuousDuration] = useState(3);
+    const [baselineDeviation, setBaselineDeviation] = useState(30);
+    const [motionRequirement, setMotionRequirement] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+
+    useEffect(() => {
+        settingsApi.get().then(s => {
+            setDrowsinessConfidence(s.alertThresholds.drowsinessConfidence);
+            setContinuousDuration(s.alertThresholds.continuousDrowsinessDuration);
+            setBaselineDeviation(s.alertThresholds.baselineDeviationThreshold);
+            setMotionRequirement(s.alertThresholds.motionRequirement);
+        }).catch(() => {});
+    }, []);
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await settingsApi.updateSection('alertThresholds', {
+                drowsinessConfidence,
+                continuousDrowsinessDuration: continuousDuration,
+                baselineDeviationThreshold: baselineDeviation,
+                motionRequirement,
+            });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+        } catch (e) { console.error(e); }
+        setSaving(false);
+    };
+
     return (
         <div className="space-y-8 pb-12">
             <div className="flex items-center justify-between">
@@ -14,8 +48,8 @@ export default function AlertThresholdsPage() {
                     <h2 className="text-xl font-black text-slate-800 dark:text-slate-100">Alert Thresholds</h2>
                     <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Fine-tune AI detection sensitivity and escalation rules.</p>
                 </div>
-                <Button className="bg-brand-red hover:bg-brand-red/90 h-10 px-6 font-bold shadow-lg shadow-brand-red/20 gap-2 text-white">
-                    <Save className="w-4 h-4" /> Save Thresholds
+                <Button onClick={save} disabled={saving} className="bg-brand-red hover:bg-brand-red/90 h-10 px-6 font-bold shadow-lg shadow-brand-red/20 gap-2 text-white">
+                    <Save className="w-4 h-4" /> {saved ? 'Saved!' : saving ? 'Saving...' : 'Save Thresholds'}
                 </Button>
             </div>
 
@@ -34,7 +68,7 @@ export default function AlertThresholdsPage() {
                                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Minimum score from facial landmark analysis to trigger alert.</p>
                             </div>
                             <div className="flex items-center gap-3">
-                                <Input type="number" defaultValue="75" className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
+                                <Input type="number" value={drowsinessConfidence} onChange={e => setDrowsinessConfidence(Number(e.target.value))} className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
                                 <span className="text-sm font-bold text-slate-400">%</span>
                             </div>
                         </div>
@@ -45,7 +79,7 @@ export default function AlertThresholdsPage() {
                                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Consecutive seconds of drowsiness before escalating to buzzer/OLED alarm.</p>
                             </div>
                             <div className="flex items-center gap-3">
-                                <Input type="number" defaultValue="3" className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
+                                <Input type="number" value={continuousDuration} onChange={e => setContinuousDuration(Number(e.target.value))} className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
                                 <span className="text-sm font-bold text-slate-400">Sec</span>
                             </div>
                         </div>
@@ -56,7 +90,7 @@ export default function AlertThresholdsPage() {
                                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">% deviation from session baseline behavior before flagging anomaly.</p>
                             </div>
                             <div className="flex items-center gap-3">
-                                <Input type="number" defaultValue="30" className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
+                                <Input type="number" value={baselineDeviation} onChange={e => setBaselineDeviation(Number(e.target.value))} className="w-20 font-bold text-center h-10 dark:bg-slate-800 dark:border-slate-700" />
                                 <span className="text-sm font-bold text-slate-400">%</span>
                             </div>
                         </div>
@@ -66,11 +100,17 @@ export default function AlertThresholdsPage() {
                                 <p className="font-bold text-slate-800 dark:text-slate-200">Motion Requirement (MPU-6050)</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Only trigger alarms when accelerometer confirms vehicle is moving.</p>
                             </div>
-                            <div className="w-12 h-6 bg-brand-red rounded-full relative cursor-pointer shadow-inner">
-                                <div className="w-5 h-5 bg-white rounded-full absolute right-0.5 top-0.5 shadow-md flex items-center justify-center">
-                                    <span className="text-[6px] font-black text-brand-red">ON</span>
+                            <button onClick={() => setMotionRequirement(!motionRequirement)} className={cn(
+                                "w-12 h-6 rounded-full relative cursor-pointer shadow-inner transition-colors",
+                                motionRequirement ? "bg-brand-red" : "bg-slate-200 dark:bg-slate-700"
+                            )}>
+                                <div className={cn(
+                                    "w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-md transition-all flex items-center justify-center",
+                                    motionRequirement ? "right-0.5" : "left-0.5"
+                                )}>
+                                    {motionRequirement && <span className="text-[6px] font-black text-brand-red">ON</span>}
                                 </div>
-                            </div>
+                            </button>
                         </div>
                     </div>
                 </CardContent>

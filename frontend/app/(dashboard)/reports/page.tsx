@@ -7,18 +7,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
     FileText,
     Download,
-    Calendar,
     BarChart4,
     PieChart,
     TrendingUp,
-    ChevronRight,
     Filter,
     Activity,
-    LineChart
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from '@/lib/utils';
 import { domainApi } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 export default function ReportsPage() {
     const [isLoading, setIsLoading] = useState(true);
@@ -26,17 +24,80 @@ export default function ReportsPage() {
     const [resolvedAlerts, setResolvedAlerts] = useState(0);
     const [driverCount, setDriverCount] = useState(0);
     const [sessionCount, setSessionCount] = useState(0);
+    const [synthesizing, setSynthesizing] = useState(false);
+    const [alerts, setAlerts] = useState<any[]>([]);
+    const [drivers, setDrivers] = useState<any[]>([]);
+    const [sessions, setSessions] = useState<any[]>([]);
+    const [reports, setReports] = useState<{ id: string; name: string; date: string; rows: number }[]>([]);
 
     useEffect(() => {
         Promise.all([
-            domainApi.getAlerts().then(alerts => {
-                setTotalAlerts(alerts.length);
-                setResolvedAlerts(alerts.filter((a: any) => a.status === 'Resolved').length);
+            domainApi.getAlerts().then(a => {
+                setAlerts(a);
+                setTotalAlerts(a.length);
+                setResolvedAlerts(a.filter((x: any) => x.status === 'Resolved').length);
             }),
-            domainApi.getDrivers().then(d => setDriverCount(d.length)),
-            domainApi.getSessions().then(s => setSessionCount(s.length)),
+            domainApi.getDrivers().then(d => { setDrivers(d); setDriverCount(d.length); }),
+            domainApi.getSessions().then(s => { setSessions(s); setSessionCount(s.length); }),
+            supabase.from('reports').select('*').order('generated_at', { ascending: false }).then(({ data }) => {
+                if (data) setReports(data.map((r: any) => ({ id: r.id, name: r.name, date: r.date, rows: r.rows })));
+            }),
         ]).catch(console.error).finally(() => setIsLoading(false));
     }, []);
+
+    const synthesizeReport = async () => {
+        setSynthesizing(true);
+        try {
+            const [latestAlerts, latestDrivers, latestSessions] = await Promise.all([
+                domainApi.getAlerts(),
+                domainApi.getDrivers(),
+                domainApi.getSessions(),
+            ]);
+            const now = new Date();
+            const dateStr = now.toISOString().split('T')[0];
+            const lines = [
+                'SafeDrive Intelligence Report',
+                `Generated: ${now.toLocaleString()}`,
+                '',
+                'SUMMARY',
+                `Total Alerts: ${latestAlerts.length}`,
+                `Resolved: ${latestAlerts.filter((a: any) => a.status === 'Resolved').length}`,
+                `High Severity: ${latestAlerts.filter((a: any) => a.severity === 'High').length}`,
+                `Drivers Registered: ${latestDrivers.length}`,
+                `Sessions Logged: ${latestSessions.length}`,
+                '',
+                'ALERT DETAILS',
+                'ID,Type,Driver,Bus,Severity,Status,Alarm,Timestamp',
+                ...latestAlerts.map((a: any) =>
+                    `${a.id},${a.type},${a.driver},${a.bus},${a.severity},${a.status},${a.alarmType},${a.timestamp}`
+                ),
+                '',
+                'DRIVER DETAILS',
+                'ID,Name,Status,Risk,WorkHours,Sessions,Detection',
+                ...latestDrivers.map((d: any) =>
+                    `${d.id},${d.name},${d.status},${d.riskLevel},${d.todayWorkHours}h,${d.totalSessions},${d.detectionStatus}`
+                ),
+                '',
+                'SESSION DETAILS',
+                'ID,Driver,Bus,Status,Duration,Alerts,Start',
+                ...latestSessions.map((s: any) =>
+                    `${s.id},${s.driver},${s.busId},${s.status},${s.duration},${s.alertCount},${s.startTime}`
+                ),
+            ];
+            const csv = lines.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `SafeDrive_Report_${dateStr}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+            const newReport = { id: `RPT-${Date.now()}`, name: `SafeDrive Report ${dateStr}`, date: now.toLocaleString(), rows: latestAlerts.length + latestDrivers.length + latestSessions.length };
+            await supabase.from('reports').insert({ id: newReport.id, name: newReport.name, date: newReport.date, rows: newReport.rows, generated_at: now.toISOString() });
+            setReports(prev => [newReport, ...prev]);
+        } catch (e) { console.error(e); }
+        setSynthesizing(false);
+    };
 
     const SkeletonStat = () => (
         <Card className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
@@ -70,8 +131,8 @@ export default function ReportsPage() {
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Intelligence Ledger</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Algorithmic summaries and historical operational audits.</p>
                 </div>
-                <Button className="bg-brand-red hover:bg-brand-red/90 text-white h-11 px-6 font-bold shadow-lg shadow-brand-red/20 gap-2">
-                    <Activity className="w-4 h-4" /> Synthesize Report
+                <Button onClick={synthesizeReport} disabled={synthesizing} className="bg-brand-red hover:bg-brand-red/90 text-white h-11 px-6 font-bold shadow-lg shadow-brand-red/20 gap-2">
+                    <Activity className="w-4 h-4" /> {synthesizing ? 'Generating...' : 'Synthesize Report'}
                 </Button>
             </div>
 
@@ -139,6 +200,23 @@ export default function ReportsPage() {
                 <div className="grid grid-cols-1 gap-4">
                     {isLoading ? (
                         Array(4).fill(0).map((_, i) => <SkeletonReport key={i} />)
+                    ) : reports.length > 0 ? (
+                        reports.map(r => (
+                            <div key={r.id} className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-14 h-14 rounded-2xl bg-brand-red/10 flex items-center justify-center">
+                                        <FileText className="w-6 h-6 text-brand-red" />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-slate-800 dark:text-white">{r.name}</p>
+                                        <p className="text-xs text-slate-400 font-medium">{r.date} &middot; {r.rows} records</p>
+                                    </div>
+                                </div>
+                                <Button variant="ghost" size="icon" onClick={synthesizeReport} className="text-slate-400 hover:text-brand-red">
+                                    <Download className="w-5 h-5" />
+                                </Button>
+                            </div>
+                        ))
                     ) : (
                         <div className="p-12 text-center text-slate-400 dark:text-slate-600">
                             <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />

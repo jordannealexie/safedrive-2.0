@@ -18,8 +18,8 @@ export default function MiniLiveMap() {
     const { theme } = useUIStore();
     const { data: sensorData } = useLiveSensor();
 
-    const lat = sensorData?.gps?.latitude ?? 14.5995;
-    const lng = sensorData?.gps?.longitude ?? 120.9842;
+    const lat = sensorData?.gps?.latitude || 14.5995;
+    const lng = sensorData?.gps?.longitude || 120.9842;
     const position: [number, number] = [lat, lng];
     
     return (

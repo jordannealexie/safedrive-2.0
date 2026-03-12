@@ -2,10 +2,11 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { domainApi, type Driver, type DriverSession, type WorkHours, type IncidentPoint } from '@/lib/api';
+import { domainApi, type Driver, type DriverSession, type WorkHours, type IncidentPoint, type AlertRecord } from '@/lib/api';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
     ChevronLeft,
     Calendar,
@@ -42,21 +43,27 @@ export default function DriverProfilePage() {
     const [driverSessions, setDriverSessions] = useState<DriverSession[]>([]);
     const [workHours, setWorkHours] = useState<WorkHours | null>(null);
     const [drowsinessIncidents, setDrowsinessIncidents] = useState<IncidentPoint[]>([]);
-    const [alerts, setAlerts] = useState<Array<{ id: string; type: string; severity: string; message: string; timestamp: string; driverId: string; status: string }>>([]);
+    const [alerts, setAlerts] = useState<AlertRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [adminNotes, setAdminNotes] = useState('');
+    const [notesSaving, setNotesSaving] = useState(false);
+    const [notesSaved, setNotesSaved] = useState(false);
+    const [notesModalOpen, setNotesModalOpen] = useState(false);
 
     useEffect(() => {
         Promise.all([
             domainApi.getDriver(driverId),
             domainApi.getDashboard(),
             domainApi.getAlerts(),
+            domainApi.getDriverNotes(driverId),
         ])
-            .then(([detail, dashboard, allAlerts]) => {
+            .then(([detail, dashboard, allAlerts, notes]) => {
                 setDriver(detail.driver);
                 setDriverSessions(detail.sessions);
                 setWorkHours(detail.workHours);
                 setDrowsinessIncidents(dashboard.drowsinessIncidents);
-                setAlerts(allAlerts.filter((a: { driverId: string }) => a.driverId === driverId));
+                setAlerts(allAlerts.filter(a => a.driver === driverId || a.driver === detail.driver.name));
+                setAdminNotes(notes);
             })
             .catch(console.error)
             .finally(() => setIsLoading(false));
@@ -165,7 +172,44 @@ export default function DriverProfilePage() {
                                 </div>
                             </div>
 
-                            <Button className="w-full bg-brand-red hover:bg-brand-red/90 text-white h-11 font-bold shadow-lg shadow-brand-red/20">
+                            <Button onClick={() => {
+                                const now = new Date();
+                                const lines = [
+                                    `SafeDrive Safety Report — ${driver.name}`,
+                                    `Generated: ${now.toLocaleString()}`,
+                                    '',
+                                    'DRIVER SUMMARY',
+                                    `ID: ${driver.id}`,
+                                    `Name: ${driver.name}`,
+                                    `Status: ${driver.status}`,
+                                    `Risk Level: ${driver.riskLevel}`,
+                                    `Detection: ${driver.detectionStatus}`,
+                                    `Baseline: ${driver.baselineStatus} (${driver.baselineConfidence}%)`,
+                                    `Total Sessions: ${driver.totalSessions}`,
+                                    `Today Work Hours: ${driver.todayWorkHours}h`,
+                                    `Registered: ${driver.faceRegisteredAt}`,
+                                    '',
+                                    'SESSIONS',
+                                    'ID,Bus,Status,Duration,Alerts,Drowsiness Events,Start',
+                                    ...driverSessions.map(s =>
+                                        `${s.id},${s.busId},${s.status},${s.duration},${s.alertCount},${s.drowsinessEvents},${s.startTime}`
+                                    ),
+                                    '',
+                                    'ALERTS',
+                                    'ID,Type,Severity,Status,Timestamp',
+                                    ...alerts.map(a =>
+                                        `${a.id},${a.type},${a.severity},${a.status},${a.timestamp}`
+                                    ),
+                                ];
+                                const csv = lines.join('\n');
+                                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                                const url = URL.createObjectURL(blob);
+                                const el = document.createElement('a');
+                                el.href = url;
+                                el.download = `SafeDrive_${driver.id}_Report_${now.toISOString().split('T')[0]}.csv`;
+                                el.click();
+                                URL.revokeObjectURL(url);
+                            }} className="w-full bg-brand-red hover:bg-brand-red/90 text-white h-11 font-bold shadow-lg shadow-brand-red/20">
                                 Download Safety Report
                             </Button>
                         </CardContent>
@@ -336,46 +380,58 @@ export default function DriverProfilePage() {
 
                     <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
                         <CardHeader>
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-xl dark:text-white">Recent Alerts</CardTitle>
-                                <Button variant="outline" size="sm" className="border-slate-200 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">View All</Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <div className="divide-y dark:divide-slate-800">
-                                {alerts.length === 0 ? (
-                                    <div className="p-6 text-center text-slate-400 dark:text-slate-500 text-sm">No alerts recorded</div>
-                                ) : alerts.slice(0, 5).map((alert) => (
-                                    <div key={alert.id} className="flex items-center justify-between p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <div className="flex items-start gap-4">
-                                            <div className={`p-3 rounded-xl ${alert.severity === 'critical' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-orange-100 dark:bg-orange-900/30'}`}>
-                                                <AlertTriangle className={`w-5 h-5 ${alert.severity === 'critical' ? 'text-brand-red' : 'text-brand-orange'}`} />
-                                            </div>
-                                            <div>
-                                                <p className="font-bold text-slate-800 dark:text-white">{alert.message}</p>
-                                                <p className="text-sm text-slate-500 dark:text-slate-400">{alert.timestamp}</p>
-                                            </div>
-                                        </div>
-                                        <StatusBadge status={alert.status} />
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
-                        <CardHeader>
                             <CardTitle className="text-xl dark:text-white">Admin Notes</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <textarea
                                 className="w-full min-h-[120px] p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-700 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-slate-500/20 transition-all resize-none font-medium placeholder:text-slate-400 dark:placeholder:text-slate-500"
                                 placeholder="Add private notes about this driver's performance..."
-                                defaultValue=""
+                                value={adminNotes}
+                                onChange={(e) => { setAdminNotes(e.target.value); setNotesSaved(false); }}
                             />
-                            <div className="mt-4 flex justify-end">
-                                <Button className="bg-brand-red hover:bg-brand-red/90 text-white h-10 px-6 font-bold shadow-lg shadow-brand-red/20">Save Notes</Button>
+                            <div className="mt-4 flex items-center justify-end gap-3">
+                                {notesSaved && (
+                                    <span className="text-xs font-bold text-emerald-500">Saved</span>
+                                )}
+                                <Button
+                                    disabled={notesSaving}
+                                    onClick={async () => {
+                                        setNotesSaving(true);
+                                        try {
+                                            await domainApi.saveDriverNotes(driverId, adminNotes);
+                                            setNotesSaved(true);
+                                        } catch (err) {
+                                            console.error('Failed to save notes:', err);
+                                        } finally {
+                                            setNotesSaving(false);
+                                        }
+                                    }}
+                                    className="bg-brand-red hover:bg-brand-red/90 text-white h-10 px-6 font-bold shadow-lg shadow-brand-red/20"
+                                >
+                                    {notesSaving ? 'Saving...' : 'Save Notes'}
+                                </Button>
                             </div>
+
+                            {adminNotes && (
+                                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                    <Dialog open={notesModalOpen} onOpenChange={setNotesModalOpen}>
+                                        <DialogTrigger asChild>
+                                            <Button variant="outline" className="w-full border-slate-200 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 font-bold">
+                                                View Saved Notes
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 max-w-lg">
+                                            <DialogHeader>
+                                                <DialogTitle className="text-xl font-bold dark:text-white">Admin Notes — {driver.name}</DialogTitle>
+                                            </DialogHeader>
+                                            <div className="mt-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 min-h-[120px]">
+                                                <p className="text-sm text-slate-700 dark:text-slate-200 font-medium whitespace-pre-wrap">{adminNotes}</p>
+                                            </div>
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">Driver ID: {driver.id}</p>
+                                        </DialogContent>
+                                    </Dialog>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </div>

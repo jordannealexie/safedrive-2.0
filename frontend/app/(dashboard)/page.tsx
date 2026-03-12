@@ -18,10 +18,13 @@ import { ChartCard } from './components/ChartCard';
 import { domainApi, type DashboardData, type DriverSession, type WorkHours } from '@/lib/api';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
 import { Button } from '@/components/ui/button';
-import { Download, Filter, Plus, ExternalLink, ShieldAlert, Eye, EyeOff, Volume2, Monitor, Clock, UserCheck, Brain, Activity } from 'lucide-react';
+import { Download, Filter, Plus, ExternalLink, ShieldAlert, Eye, EyeOff, Volume2, Monitor, Clock, UserCheck, Brain, Activity, ChevronDown } from 'lucide-react';
 import { useUIStore } from '@/store/useUIStore';
 import { StatusBadge } from './components/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 
 import { motion } from 'framer-motion';
 
@@ -57,7 +60,9 @@ export default function DashboardPage() {
     const [dashboard, setDashboard] = useState<DashboardData | null>(null);
     const [sessions, setSessions] = useState<DriverSession[]>([]);
     const [workHours, setWorkHours] = useState<WorkHours[]>([]);
-
+    const [showAnalysis, setShowAnalysis] = useState(false);
+    const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | 'all'>('all');
+    const [analysisStats, setAnalysisStats] = useState<{ totalAlerts: number; highSeverity: number; resolvedRate: number; avgPerDay: number } | null>(null);
     useEffect(() => {
         Promise.all([
             domainApi.getDashboard(),
@@ -73,6 +78,33 @@ export default function DashboardPage() {
             .finally(() => setIsLoading(false));
     }, []);
 
+    useEffect(() => {
+        if (!showAnalysis) return;
+        const fetchAnalysis = async () => {
+            let query = supabase.from('alerts').select('*');
+            const now = new Date();
+            if (timeRange === 'today') {
+                query = query.gte('created_at', new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString());
+            } else if (timeRange === '7d') {
+                query = query.gte('created_at', new Date(now.getTime() - 7 * 86400000).toISOString());
+            } else if (timeRange === '30d') {
+                query = query.gte('created_at', new Date(now.getTime() - 30 * 86400000).toISOString());
+            }
+            const { data } = await query;
+            const alerts = data || [];
+            const high = alerts.filter((a: any) => a.severity === 'High').length;
+            const resolved = alerts.filter((a: any) => a.status === 'Resolved').length;
+            const days = timeRange === 'today' ? 1 : timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : Math.max(1, Math.ceil((now.getTime() - new Date(Math.min(...alerts.map((a: any) => new Date(a.created_at).getTime()))).getTime()) / 86400000));
+            setAnalysisStats({
+                totalAlerts: alerts.length,
+                highSeverity: high,
+                resolvedRate: alerts.length > 0 ? Math.round((resolved / alerts.length) * 100) : 0,
+                avgPerDay: Math.round((alerts.length / days) * 10) / 10,
+            });
+        };
+        fetchAnalysis();
+    }, [showAnalysis, timeRange]);
+
     const chartGridColor = theme === 'dark' ? '#1e293b' : '#f1f5f9';
     const chartLabelColor = theme === 'dark' ? '#94a3b8' : '#64748b';
 
@@ -85,16 +117,50 @@ export default function DashboardPage() {
                     <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Realtime drowsiness detection and session monitoring active.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button variant="outline" className="gap-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 dark:text-slate-300">
+                    <Button variant="outline" onClick={() => setShowAnalysis(!showAnalysis)} className={cn("gap-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 dark:text-slate-300", showAnalysis && "ring-2 ring-brand-red")}>
                         <Filter className="w-4 h-4" />
                         Analysis
                     </Button>
-                    <Button className="gap-2 bg-brand-red hover:bg-brand-red/90 text-white shadow-lg shadow-brand-red/20 font-bold px-6">
-                        <ShieldAlert className="w-4 h-4" />
-                        Emergency Mode
-                    </Button>
                 </div>
             </div>
+
+            {showAnalysis && (
+                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-white dark:bg-slate-900 rounded-[24px] border border-slate-100 dark:border-slate-800 shadow-sm p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest">Alert Analysis</h3>
+                        <div className="flex gap-2">
+                            {(['today', '7d', '30d', 'all'] as const).map(r => (
+                                <button key={r} onClick={() => setTimeRange(r)} className={cn(
+                                    "px-4 py-1.5 rounded-lg text-xs font-black transition-all",
+                                    timeRange === r ? "bg-brand-red text-white shadow-sm" : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                                )}>
+                                    {r === 'today' ? 'Today' : r === '7d' ? '7 Days' : r === '30d' ? '30 Days' : 'All Time'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {analysisStats && (
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Alerts</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white mt-1">{analysisStats.totalAlerts}</p>
+                            </div>
+                            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-900/10">
+                                <p className="text-[10px] font-black text-brand-red uppercase tracking-widest">High Severity</p>
+                                <p className="text-2xl font-black text-brand-red mt-1">{analysisStats.highSeverity}</p>
+                            </div>
+                            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/10">
+                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Resolved Rate</p>
+                                <p className="text-2xl font-black text-emerald-600 mt-1">{analysisStats.resolvedRate}%</p>
+                            </div>
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Avg/Day</p>
+                                <p className="text-2xl font-black text-slate-800 dark:text-white mt-1">{analysisStats.avgPerDay}</p>
+                            </div>
+                        </div>
+                    )}
+                </motion.div>
+            )}
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -227,10 +293,10 @@ export default function DashboardPage() {
                                         <tr key={alert.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs">
-                                                        {alert.driver.replace('Driver ', 'D')}
+                                                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs shrink-0">
+                                                        {alert.driver.replace(/\D+/g, '').slice(-2) || 'D'}
                                                     </div>
-                                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{alert.driver}</span>
+                                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{alert.driver}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4">

@@ -2,11 +2,13 @@
 
 All data is derived from the safedrive_ai drowsiness detection system
 running on the prototype.  A background poller reads the shared state
-file and builds an in-memory event log.
+file and builds an in-memory event log.  Data is persisted to Supabase.
 """
 
+import os
 import json
 import time
+import logging
 import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -16,6 +18,23 @@ from fastapi import APIRouter, HTTPException
 router = APIRouter(prefix="/api", tags=["Domain"])
 
 STATE_FILE = Path("/tmp/safedrive_oled_state.json")
+
+_log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Supabase client
+# ---------------------------------------------------------------------------
+
+_SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://idlpmawnxqihjjaqzaky.supabase.co")
+_SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkbHBtYXdueHFpaGpqYXF6YWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDYyNzgsImV4cCI6MjA4ODg4MjI3OH0.blj6SUvha9Hk8ZXXdB8awCeanEQ4RWcNyMnQk40KxjE")
+
+_sb = None
+try:
+    from supabase import create_client
+    _sb = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+    _log.info("Supabase client initialized")
+except Exception as e:
+    _log.warning("Supabase not available, running in-memory only: %s", e)
 
 # ---------------------------------------------------------------------------
 # In-memory tracker — populated by a background thread
@@ -46,6 +65,186 @@ _events_by_hour: dict[int, int] = {}
 _events_by_day: dict[int, int] = {}
 
 
+# ---------------------------------------------------------------------------
+# Supabase sync helpers
+# ---------------------------------------------------------------------------
+
+def _sb_upsert_driver(driver: dict):
+    """Upsert a driver record to Supabase."""
+    if not _sb:
+        return
+    try:
+        row = {
+            "id": driver["id"],
+            "name": driver.get("name", ""),
+            "bus_id": driver.get("busId", "BUS-001"),
+            "status": driver.get("status", "Normal"),
+            "last_alert": driver.get("lastAlert", "N/A"),
+            "risk_level": driver.get("riskLevel", "Low"),
+            "face_registered": driver.get("faceRegistered", True),
+            "face_registered_at": driver.get("faceRegisteredAt"),
+            "total_sessions": driver.get("totalSessions", 0),
+            "today_work_hours": driver.get("todayWorkHours", 0.0),
+            "today_sessions": driver.get("todaySessions", 0),
+            "detection_status": driver.get("detectionStatus", "monitoring"),
+            "baseline_status": driver.get("baselineStatus", "learned"),
+            "baseline_confidence": driver.get("baselineConfidence", 80),
+        }
+        _sb.table("drivers").upsert(row).execute()
+    except Exception as e:
+        _log.warning("Supabase driver upsert failed: %s", e)
+
+
+def _sb_insert_alert(alert: dict):
+    """Insert an alert record to Supabase."""
+    if not _sb:
+        return
+    try:
+        row = {
+            "id": alert["id"],
+            "type": alert["type"],
+            "driver": alert["driver"],
+            "bus": alert.get("bus", "BUS-001"),
+            "timestamp": alert["timestamp"],
+            "status": alert.get("status", "Active"),
+            "severity": alert.get("severity", "Medium"),
+            "ear_value": alert.get("ear_value", 0.0),
+            "alarm_type": alert.get("alarmType", "buzzer_oled"),
+            "session_id": alert.get("sessionId", ""),
+        }
+        _sb.table("alerts").upsert(row).execute()
+    except Exception as e:
+        _log.warning("Supabase alert insert failed: %s", e)
+
+
+def _sb_upsert_session(sess: dict):
+    """Upsert a session record to Supabase."""
+    if not _sb:
+        return
+    try:
+        row = {
+            "id": sess["id"],
+            "driver_id": sess["driverId"],
+            "driver": sess.get("driver", ""),
+            "bus_id": sess.get("busId", "BUS-001"),
+            "start_time": sess.get("startTime"),
+            "end_time": sess.get("endTime"),
+            "status": sess.get("status", "active"),
+            "alert_count": sess.get("alertCount", 0),
+            "drowsiness_events": sess.get("drowsinessEvents", 0),
+            "start_timestamp": sess.get("startTimestamp", 0),
+        }
+        _sb.table("sessions").upsert(row).execute()
+    except Exception as e:
+        _log.warning("Supabase session upsert failed: %s", e)
+
+
+def _sb_upsert_event_stat(stat_type: str, stat_key: int, count: int):
+    """Upsert an event stat to Supabase."""
+    if not _sb:
+        return
+    try:
+        _sb.table("event_stats").upsert(
+            {"stat_type": stat_type, "stat_key": stat_key, "count": count},
+            on_conflict="stat_type,stat_key"
+        ).execute()
+    except Exception as e:
+        _log.warning("Supabase event_stats upsert failed: %s", e)
+
+
+def _load_from_supabase():
+    """Restore domain data from Supabase on startup."""
+    global _session_counter
+    if not _sb:
+        return
+    try:
+        # Load drivers
+        rows = _sb.table("drivers").select("*").execute().data
+        for r in rows:
+            _drivers[r["id"]] = {
+                "id": r["id"],
+                "name": r.get("name", r["id"]),
+                "busId": r.get("bus_id", "BUS-001"),
+                "status": r.get("status", "Normal"),
+                "lastAlert": r.get("last_alert", "N/A"),
+                "riskLevel": r.get("risk_level", "Low"),
+                "faceRegistered": r.get("face_registered", True),
+                "faceRegisteredAt": r.get("face_registered_at"),
+                "totalSessions": r.get("total_sessions", 0),
+                "todayWorkHours": r.get("today_work_hours", 0.0),
+                "todaySessions": r.get("today_sessions", 0),
+                "detectionStatus": r.get("detection_status", "monitoring"),
+                "baselineStatus": r.get("baseline_status", "learned"),
+                "baselineConfidence": r.get("baseline_confidence", 80),
+                "firstSeen": r.get("first_seen", ""),
+            }
+
+        # Load alerts (last 200)
+        rows = _sb.table("alerts").select("*").order("created_at", desc=True).limit(200).execute().data
+        for r in reversed(rows):
+            _alerts.append({
+                "id": r["id"],
+                "type": r["type"],
+                "driver": r["driver"],
+                "bus": r.get("bus", "BUS-001"),
+                "timestamp": r["timestamp"],
+                "status": r.get("status", "Active"),
+                "severity": r.get("severity", "Medium"),
+                "ear_value": r.get("ear_value", 0.0),
+                "alarmType": r.get("alarm_type", "buzzer_oled"),
+                "sessionId": r.get("session_id", ""),
+            })
+
+        # Load sessions — mark old active ones as completed
+        rows = _sb.table("sessions").select("*").order("created_at", desc=True).limit(200).execute().data
+        max_counter = 0
+        for r in rows:
+            # Extract counter from session ID like SES-20260312-003
+            try:
+                c = int(r["id"].split("-")[-1])
+                if c > max_counter:
+                    max_counter = c
+            except (ValueError, IndexError):
+                pass
+
+            sess = {
+                "id": r["id"],
+                "driverId": r["driver_id"],
+                "driver": r.get("driver", ""),
+                "busId": r.get("bus_id", "BUS-001"),
+                "startTime": r.get("start_time"),
+                "endTime": r.get("end_time"),
+                "status": r.get("status", "completed"),
+                "alertCount": r.get("alert_count", 0),
+                "drowsinessEvents": r.get("drowsiness_events", 0),
+                "startTimestamp": r.get("start_timestamp", 0),
+            }
+            if sess["status"] == "active":
+                sess["status"] = "completed"
+                if not sess.get("endTime"):
+                    sess["endTime"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+                _sb_upsert_session(sess)
+            _completed_sessions.append(sess)
+        _session_counter = max_counter
+
+        # Load event stats
+        rows = _sb.table("event_stats").select("*").execute().data
+        for r in rows:
+            if r["stat_type"] == "hourly":
+                _events_by_hour[r["stat_key"]] = r["count"]
+            elif r["stat_type"] == "daily":
+                _events_by_day[r["stat_key"]] = r["count"]
+
+        _log.info("Loaded from Supabase: %d drivers, %d alerts, %d sessions",
+                  len(_drivers), len(_alerts), len(_completed_sessions))
+    except Exception as e:
+        _log.warning("Failed to load from Supabase: %s", e)
+
+
+# Load persisted data on import
+_load_from_supabase()
+
+
 def _poll_state():
     """Background thread: poll the safedrive_ai state file."""
     global _prev_state, _session_counter
@@ -69,6 +268,13 @@ def _process_state(data: dict):
     is_moving = data.get("is_moving", False)
     prev_state_name = _prev_state.get("drowsiness_state", "ALERT")
     prev_driver = _prev_state.get("driver_id", "")
+
+    # Collect items to sync to Supabase after releasing the lock
+    sync_driver = None
+    sync_alert = None
+    sync_session = None
+    sync_session_end = None
+    sync_events = []
 
     with _lock:
         # --- Track drivers ---
@@ -114,6 +320,8 @@ def _process_state(data: dict):
                 if driver_id in _drivers:
                     _drivers[driver_id]["totalSessions"] += 1
                     _drivers[driver_id]["todaySessions"] += 1
+                sync_driver = dict(_drivers[driver_id])
+                sync_session = dict(_active_sessions[driver_id])
         elif driver_id == "UNKNOWN" and prev_driver and prev_driver != "UNKNOWN":
             # Driver left — end session
             if prev_driver in _active_sessions:
@@ -121,6 +329,7 @@ def _process_state(data: dict):
                 sess["endTime"] = now.strftime("%Y-%m-%d %H:%M")
                 sess["status"] = "completed"
                 _completed_sessions.append(sess)
+                sync_session_end = dict(sess)
 
         # --- Drowsiness event detection ---
         if state in ("DROWSY", "CRITICAL") and prev_state_name == "ALERT":
@@ -138,18 +347,38 @@ def _process_state(data: dict):
                 "sessionId": _active_sessions.get(driver_id, {}).get("id", ""),
             }
             _alerts.append(alert)
+            sync_alert = dict(alert)
 
             _events_by_hour[now.hour] = _events_by_hour.get(now.hour, 0) + 1
             _events_by_day[now.weekday()] = _events_by_day.get(now.weekday(), 0) + 1
+            sync_events.append(("hourly", now.hour, _events_by_hour[now.hour]))
+            sync_events.append(("daily", now.weekday(), _events_by_day[now.weekday()]))
 
             if driver_id in _active_sessions:
                 _active_sessions[driver_id]["drowsinessEvents"] += 1
                 _active_sessions[driver_id]["alertCount"] += 1
+                sync_session = dict(_active_sessions[driver_id])
             if driver_id in _drivers:
                 _drivers[driver_id]["lastAlert"] = "Just now"
                 _drivers[driver_id]["riskLevel"] = "High" if state == "CRITICAL" else "Medium"
+                sync_driver = dict(_drivers[driver_id])
 
     _prev_state = dict(data)
+
+    # Sync to Supabase in background thread (non-blocking)
+    if sync_driver or sync_alert or sync_session or sync_session_end or sync_events:
+        def _do_sync():
+            if sync_driver:
+                _sb_upsert_driver(sync_driver)
+            if sync_alert:
+                _sb_insert_alert(sync_alert)
+            if sync_session:
+                _sb_upsert_session(sync_session)
+            if sync_session_end:
+                _sb_upsert_session(sync_session_end)
+            for st, sk, sc in sync_events:
+                _sb_upsert_event_stat(st, sk, sc)
+        threading.Thread(target=_do_sync, daemon=True).start()
 
 
 # Start the background poller
