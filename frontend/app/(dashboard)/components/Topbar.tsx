@@ -29,7 +29,10 @@ export function Topbar() {
 
     useEffect(() => {
         fetchAlerts();
-        const interval = setInterval(fetchAlerts, 10000);
+        const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+            fetchAlerts();
+        }, 10000);
         return () => clearInterval(interval);
     }, [fetchAlerts]);
 

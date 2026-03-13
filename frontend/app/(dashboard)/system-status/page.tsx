@@ -189,23 +189,23 @@ export default function SystemStatusPage() {
                         const hasAlert = !!alertMsg && alertPri > 0;
 
                         return (
-                            <div className="bg-black rounded-xl p-2 shadow-2xl shadow-black/40 border-2 border-slate-700">
-                                <div className="bg-black rounded-lg w-[320px] h-[160px] font-mono relative overflow-hidden" style={{ imageRendering: 'pixelated' }}>
+                            <div className="bg-black rounded-xl p-2.5 shadow-2xl shadow-black/40 border-2 border-slate-700">
+                                <div className="bg-black rounded-lg w-[460px] h-[230px] font-mono relative overflow-hidden" style={{ imageRendering: 'pixelated' }}>
                                     {hasAlert ? (
                                         /* Full-screen alert overlay */
                                         <div className={cn(
                                             "w-full h-full flex items-center justify-center border-2 rounded",
                                             alertPri >= 2 ? "bg-cyan-400 text-black" : "bg-black text-cyan-400 border-cyan-400"
                                         )}>
-                                            <span className="text-xl font-bold tracking-wider">{alertMsg}</span>
+                                            <span className="text-2xl font-bold tracking-wider">{alertMsg}</span>
                                         </div>
                                     ) : (
                                         <>
                                             {/* Row 0: Header bar */}
-                                            <div className="bg-cyan-400 text-black px-3 py-0.5 flex items-center justify-between text-xs">
+                                            <div className="bg-cyan-400 text-black px-3 py-1 flex items-center justify-between text-sm">
                                                 <span className="font-bold tracking-wide">SafeDrive</span>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[10px]">{fps.toFixed(0)}fps</span>
+                                                    <span className="text-xs">{fps.toFixed(0)}fps</span>
                                                     <span className={cn(
                                                         "w-2.5 h-2.5 rounded-full border border-black",
                                                         gpsValid ? "bg-black" : "bg-transparent"
@@ -220,26 +220,26 @@ export default function SystemStatusPage() {
                                                 state === 'CRITICAL' ? "border border-cyan-400 text-cyan-400" :
                                                 "text-cyan-400"
                                             )}>
-                                                <span className="text-lg font-bold tracking-widest">
+                                                <span className="text-2xl font-bold tracking-widest">
                                                     {state === 'DROWSY' ? '!! DROWSY !!' :
                                                      state === 'CRITICAL' ? '! CRITICAL !' : 'ALERT'}
                                                 </span>
                                             </div>
 
                                             {/* Row 2: EAR */}
-                                            <div className="px-3 mt-1">
-                                                <span className="text-cyan-400 text-sm">EAR:{ear.toFixed(3)}</span>
+                                            <div className="px-3 mt-1.5">
+                                                <span className="text-cyan-400 text-base">EAR:{ear.toFixed(3)}</span>
                                             </div>
 
                                             {/* Row 3: Driver ID */}
-                                            <div className="px-3 mt-0.5">
-                                                <span className="text-cyan-400 text-xs">DRV:{drv}</span>
+                                            <div className="px-3 mt-1">
+                                                <span className="text-cyan-400 text-sm">DRV:{drv}</span>
                                             </div>
 
                                             {/* Row 4: Speed + Motion */}
-                                            <div className="px-3 mt-0.5 flex justify-between">
-                                                <span className="text-cyan-400 text-xs">{gpsValid ? `${speedKmh.toFixed(0)}km/h` : '--km/h'}</span>
-                                                <span className="text-cyan-400 text-xs">{isMoving ? 'Mov' : 'Stp'}</span>
+                                            <div className="px-3 mt-1 flex justify-between">
+                                                <span className="text-cyan-400 text-sm">{gpsValid ? `${speedKmh.toFixed(0)}km/h` : '--km/h'}</span>
+                                                <span className="text-cyan-400 text-sm">{isMoving ? 'Mov' : 'Stp'}</span>
                                             </div>
                                         </>
                                     )}

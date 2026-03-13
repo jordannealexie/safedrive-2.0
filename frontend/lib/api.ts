@@ -2,6 +2,67 @@ import { supabase } from './supabase';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+const DEFAULT_CACHE_TTL_MS = 8000;
+
+type CacheEntry = { data: unknown; expiresAt: number };
+
+const memoryCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+function getCachedValue<T>(cacheKey: string): T | null {
+    const mem = memoryCache.get(cacheKey);
+    if (mem && mem.expiresAt > Date.now()) return mem.data as T;
+
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(cacheKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as unknown;
+
+        // New cache envelope format: { data, expiresAt }
+        if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            'data' in parsed &&
+            'expiresAt' in parsed &&
+            typeof (parsed as { expiresAt: unknown }).expiresAt === 'number'
+        ) {
+            const entry = parsed as CacheEntry;
+            if (entry.expiresAt <= Date.now()) {
+                localStorage.removeItem(cacheKey);
+                return null;
+            }
+            memoryCache.set(cacheKey, entry);
+            return entry.data as T;
+        }
+
+        // Backward-compatible path for old plain JSON cache entries.
+        const legacyData = parsed as T;
+        memoryCache.set(cacheKey, { data: legacyData, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS });
+        return legacyData;
+    } catch {
+        return null;
+    }
+}
+
+function setCachedValue<T>(cacheKey: string, data: T, ttlMs: number): void {
+    const entry: CacheEntry = { data, expiresAt: Date.now() + ttlMs };
+    memoryCache.set(cacheKey, entry);
+    if (typeof window !== 'undefined') {
+        try { localStorage.setItem(cacheKey, JSON.stringify(entry)); } catch {}
+    }
+}
+
+async function dedupedRequest<T>(requestKey: string, loader: () => Promise<T>): Promise<T> {
+    const existing = inFlightRequests.get(requestKey);
+    if (existing) return existing as Promise<T>;
+
+    const promise = loader().finally(() => {
+        inFlightRequests.delete(requestKey);
+    });
+    inFlightRequests.set(requestKey, promise as Promise<unknown>);
+    return promise;
+}
 
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
     const controller = new AbortController();
@@ -22,23 +83,38 @@ export async function apiFetch<T = unknown>(path: string, options?: RequestInit)
     }
 }
 
-/** Fetch with localStorage cache — returns cached data when the API is unreachable. */
-async function cachedFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
+/**
+ * Fetch with TTL cache + request deduplication.
+ * Returns cached data immediately for GET reads when fresh.
+ */
+async function cachedFetch<T = unknown>(
+    path: string,
+    options?: RequestInit,
+    ttlMs: number = DEFAULT_CACHE_TTL_MS,
+): Promise<T> {
+    const method = (options?.method || 'GET').toUpperCase();
+    const isRead = method === 'GET';
     const cacheKey = `safedrive_cache_${path}`;
-    try {
-        const data = await apiFetch<T>(path, options);
-        if (typeof window !== 'undefined') {
-            try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch {}
-        }
-        return data;
-    } catch {
-        // Pi API failed — try localStorage cache
-        if (typeof window !== 'undefined') {
-            const cached = localStorage.getItem(cacheKey);
-            if (cached) return JSON.parse(cached) as T;
-        }
-        throw new Error(`API unreachable and no cache for ${path}`);
+    const requestKey = `request_${method}_${path}`;
+
+    if (isRead) {
+        const fresh = getCachedValue<T>(cacheKey);
+        if (fresh !== null) return fresh;
     }
+
+    return dedupedRequest<T>(requestKey, async () => {
+        try {
+            const data = await apiFetch<T>(path, options);
+            if (isRead) setCachedValue(cacheKey, data, ttlMs);
+            return data;
+        } catch {
+            if (isRead) {
+                const stale = getCachedValue<T>(cacheKey);
+                if (stale !== null) return stale;
+            }
+            throw new Error(`API unreachable and no cache for ${path}`);
+        }
+    });
 }
 
 export function getWsUrl(path: string): string {
@@ -444,18 +520,30 @@ export const domainApi = {
     },
     getWorkHours: () => cachedFetch<WorkHours[]>('/api/work-hours'),
     getAlerts: async (): Promise<AlertRecord[]> => {
-        // Always read from Supabase so status mutations are reflected
-        try {
-            const { data, error } = await supabase
-                .from('alerts')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(200);
-            if (error) throw error;
-            if (data && data.length > 0) return data.map(mapAlertRow);
-        } catch {}
-        // Fallback to Pi API / cache
-        return cachedFetch<AlertRecord[]>('/api/alerts');
+        const alertsCacheKey = 'safedrive_cache_domain_alerts';
+        const cached = getCachedValue<AlertRecord[]>(alertsCacheKey);
+        if (cached !== null) return cached;
+
+        return dedupedRequest<AlertRecord[]>('request_domain_alerts', async () => {
+            // Prefer Supabase for status mutations, then cache aggressively for snappy navigation
+            try {
+                const { data, error } = await supabase
+                    .from('alerts')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(200);
+                if (error) throw error;
+                if (data && data.length > 0) {
+                    const mapped = data.map(mapAlertRow);
+                    setCachedValue(alertsCacheKey, mapped, DEFAULT_CACHE_TTL_MS);
+                    return mapped;
+                }
+            } catch {}
+
+            const fallback = await cachedFetch<AlertRecord[]>('/api/alerts');
+            setCachedValue(alertsCacheKey, fallback, DEFAULT_CACHE_TTL_MS);
+            return fallback;
+        });
     },
     getBuses: () => cachedFetch<BusRecord[]>('/api/buses'),
 

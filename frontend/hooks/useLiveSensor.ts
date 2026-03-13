@@ -14,6 +14,7 @@ export function useLiveSensor() {
     const [connected, setConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const connectRef = useRef<() => void>(() => {});
 
     const connect = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -36,7 +37,7 @@ export function useLiveSensor() {
         ws.onclose = () => {
             setConnected(false);
             // Reconnect after 3 seconds
-            reconnectTimerRef.current = setTimeout(connect, 3000);
+            reconnectTimerRef.current = setTimeout(() => connectRef.current(), 3000);
         };
 
         ws.onerror = () => {
@@ -45,12 +46,16 @@ export function useLiveSensor() {
     }, []);
 
     useEffect(() => {
-        connect();
+        connectRef.current = connect;
+    }, [connect]);
+
+    useEffect(() => {
+        connectRef.current();
         return () => {
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
             wsRef.current?.close();
         };
-    }, [connect]);
+    }, []);
 
     return { data, connected };
 }
