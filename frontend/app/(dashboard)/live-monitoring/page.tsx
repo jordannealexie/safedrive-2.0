@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
-import { domainApi, type BusRecord } from '@/lib/api';
+import { domainApi, getRuntimeConfigDiagnostics, type BusRecord } from '@/lib/api';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false }) as any;
@@ -43,6 +43,7 @@ export default function LiveMonitoringPage() {
     const [buses, setBuses] = useState<BusRecord[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [refreshing, setRefreshing] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
         setIsClient(true);
@@ -54,12 +55,26 @@ export default function LiveMonitoringPage() {
                 shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
             });
         });
-        domainApi.getBuses().then(setBuses).catch(console.error);
+        domainApi.getBuses()
+            .then((rows) => {
+                setBuses(rows);
+                setLoadError(null);
+            })
+            .catch((error) => {
+                console.error(error);
+                setLoadError('Unable to load live buses from API.');
+            });
     }, []);
 
     const refreshMap = async () => {
         setRefreshing(true);
-        try { setBuses(await domainApi.getBuses()); } catch (e) { console.error(e); }
+        try {
+            setBuses(await domainApi.getBuses());
+            setLoadError(null);
+        } catch (e) {
+            console.error(e);
+            setLoadError('Unable to refresh live buses from API.');
+        }
         setRefreshing(false);
     };
 
@@ -67,7 +82,23 @@ export default function LiveMonitoringPage() {
     const raw = sensorData?.oled?.raw as Record<string, unknown> | undefined;
     const DEFAULT_LAT = 14.5995;
     const DEFAULT_LNG = 120.9842;
-    const liveLocations: LiveLocation[] = buses.map(bus => {
+    const sourceBuses: BusRecord[] = buses.length > 0
+        ? buses
+        : (sensorData?.gps?.latitude != null && sensorData?.gps?.longitude != null
+            ? [{
+                id: 'BUS-LIVE',
+                driver: (raw?.driver_id as string) ?? 'LIVE',
+                status: sensorData?.is_moving ? 'Online' : 'Stationary',
+                battery: '—',
+                speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : '0 km/h',
+                location: [sensorData.gps.latitude, sensorData.gps.longitude],
+                driverId: (raw?.driver_id as string) ?? 'LIVE',
+                detectionStatus: (raw?.drowsiness_state as string)?.toLowerCase() ?? 'monitoring',
+                sessionId: '',
+            }]
+            : []);
+
+    const liveLocations: LiveLocation[] = sourceBuses.map(bus => {
         const lat = sensorData?.gps?.latitude || bus.location[0] || DEFAULT_LAT;
         const lng = sensorData?.gps?.longitude || bus.location[1] || DEFAULT_LNG;
         return {
@@ -97,8 +128,24 @@ export default function LiveMonitoringPage() {
         ? [sensorData.gps.latitude, sensorData.gps.longitude!]
         : [14.5995, 120.9842];
 
+    const configDiag = getRuntimeConfigDiagnostics();
+
     return (
         <div className="h-[calc(100vh-120px)] flex flex-col gap-6">
+            {(!configDiag.ok || loadError) && (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+                    <p className="text-xs font-black uppercase tracking-widest">Live Monitoring Diagnostics</p>
+                    {loadError && <p className="mt-1 text-sm font-semibold">{loadError}</p>}
+                    {!configDiag.ok && (
+                        <ul className="mt-1 list-disc pl-5 text-sm font-semibold">
+                            {configDiag.issues.map((issue) => (
+                                <li key={issue}>{issue}</li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            )}
+
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Live Monitoring</h1>

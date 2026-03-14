@@ -1,7 +1,12 @@
 import { supabase } from './supabase';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
+const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
+const RAW_WS_URL = process.env.NEXT_PUBLIC_WS_URL?.trim() || '';
+const IS_DEV = process.env.NODE_ENV !== 'production';
+
+// Allow localhost convenience only in development. In production, force explicit config.
+const API_URL = RAW_API_URL || (IS_DEV ? 'http://localhost:8000' : '');
+const WS_URL = RAW_WS_URL || (IS_DEV ? 'ws://localhost:8000' : '');
 const DEFAULT_CACHE_TTL_MS = 8000;
 
 type CacheEntry = { data: unknown; expiresAt: number };
@@ -65,6 +70,10 @@ async function dedupedRequest<T>(requestKey: string, loader: () => Promise<T>): 
 }
 
 export async function apiFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
+    if (!API_URL) {
+        throw new Error('Missing NEXT_PUBLIC_API_URL in production environment.');
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
@@ -118,7 +127,35 @@ async function cachedFetch<T = unknown>(
 }
 
 export function getWsUrl(path: string): string {
+    if (!WS_URL) {
+        throw new Error('Missing NEXT_PUBLIC_WS_URL in production environment.');
+    }
     return `${WS_URL}${path}`;
+}
+
+export function getRuntimeConfigDiagnostics() {
+    const issues: string[] = [];
+
+    if (!API_URL) {
+        issues.push('NEXT_PUBLIC_API_URL is missing.');
+    }
+    if (!WS_URL) {
+        issues.push('NEXT_PUBLIC_WS_URL is missing.');
+    }
+    if (WS_URL && !/^wss?:\/\//i.test(WS_URL)) {
+        issues.push('NEXT_PUBLIC_WS_URL must start with ws:// or wss://.');
+    }
+    if (!IS_DEV && WS_URL.startsWith('ws://')) {
+        issues.push('NEXT_PUBLIC_WS_URL should use wss:// in production.');
+    }
+
+    return {
+        apiUrl: API_URL,
+        wsUrl: WS_URL,
+        isDev: IS_DEV,
+        issues,
+        ok: issues.length === 0,
+    };
 }
 
 // --- Typed API helpers ---
