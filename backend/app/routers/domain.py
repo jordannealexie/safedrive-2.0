@@ -25,6 +25,7 @@ PHT = timezone(timedelta(hours=8))
 _log = logging.getLogger(__name__)
 
 SESSION_GRACE_PERIOD_SECONDS = 20 * 60
+DELETED_DRIVER_COOLDOWN_SECONDS = 60
 
 # ---------------------------------------------------------------------------
 # Supabase client
@@ -64,8 +65,9 @@ _completed_sessions: list[dict] = []
 # Track when an active driver's signal went missing so we can apply grace period.
 _missing_since: dict[str, float] = {}
 
-# Driver IDs explicitly deleted by an operator; avoid recreating them from noisy live state.
-_deleted_drivers: set[str] = set()
+# Driver IDs explicitly deleted by an operator; temporarily suppress recreation
+# from noisy live state, then allow reappearance after cooldown.
+_deleted_drivers: dict[str, float] = {}
 
 # Previous state for change detection
 _prev_state: dict = {}
@@ -294,9 +296,12 @@ def _process_state(data: dict):
     with _lock:
         # --- Track drivers ---
         if driver_id and driver_id != "UNKNOWN":
-            if driver_id in _deleted_drivers:
-                _prev_state = dict(data)
-                return
+            deleted_at = _deleted_drivers.get(driver_id)
+            if deleted_at is not None:
+                if now_ts - deleted_at < DELETED_DRIVER_COOLDOWN_SECONDS:
+                    _prev_state = dict(data)
+                    return
+                _deleted_drivers.pop(driver_id, None)
             if driver_id not in _drivers:
                 _drivers[driver_id] = {
                     "id": driver_id,
@@ -548,9 +553,13 @@ def list_work_hours():
 def list_drivers():
     with _lock:
         result = []
+        now_ts = time.time()
         for drv in _drivers.values():
-            if drv["id"] in _deleted_drivers:
+            deleted_at = _deleted_drivers.get(drv["id"])
+            if deleted_at is not None and now_ts - deleted_at < DELETED_DRIVER_COOLDOWN_SECONDS:
                 continue
+            if deleted_at is not None:
+                _deleted_drivers.pop(drv["id"], None)
             d = dict(drv)
             if d["id"] not in _active_sessions:
                 d["status"] = "Offline"
@@ -578,7 +587,7 @@ def delete_driver(driver_id: str):
 
     with _lock:
         del _drivers[driver_id]
-        _deleted_drivers.add(driver_id)
+        _deleted_drivers[driver_id] = time.time()
         _active_sessions.pop(driver_id, None)
         _missing_since.pop(driver_id, None)
         # Remove driver's alerts and sessions

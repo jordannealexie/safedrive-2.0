@@ -43,7 +43,10 @@ function getCachedValue<T>(cacheKey: string): T | null {
 
         // Backward-compatible path for old plain JSON cache entries.
         const legacyData = parsed as T;
-        memoryCache.set(cacheKey, { data: legacyData, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS });
+        const migrated: CacheEntry = { data: legacyData, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS };
+        memoryCache.set(cacheKey, migrated);
+        // Persist migrated envelope so old cache shape does not live forever across reloads.
+        try { localStorage.setItem(cacheKey, JSON.stringify(migrated)); } catch {}
         return legacyData;
     } catch {
         return null;
