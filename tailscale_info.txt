@@ -1,0 +1,23 @@
+=== Tailscale version ===
+1.94.2
+  tailscale commit: 0a29cf18b56e478b9cd33af07755fcae90d5171a
+  long version: 1.94.2-t0a29cf18b-g3f044c9f6
+  other commit: 3f044c9f62dd0168c79f9ba7e67250b1dee06caa
+  go version: go1.25.5
+=== DNS Name ===
+100.69.59.30   raspi4b  lexiedanne06@  linux    -
+=== Funnel help ===
+Serve content and local servers on the internet
+
+USAGE
+  tailscale funnel <target>
+  tailscale funnel status [--json]
+  tailscale funnel reset
+
+Funnel enables you to share a local server on the internet using Tailscale.
+
+To share only within your tailnet, use `tailscale serve`
+=== Current serve status ===
+# Funnel on:
+
+No serve config

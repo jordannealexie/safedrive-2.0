@@ -174,7 +174,7 @@ export default function SystemStatusPage() {
                         </Badge>
                     </div>
                 </CardHeader>
-                <CardContent className="p-8 flex justify-center">
+                <CardContent className="p-8 sm:p-10 flex justify-center">
                     {(() => {
                         const raw = sensorData?.oled?.raw as Record<string, unknown> | undefined;
                         const state = raw?.drowsiness_state as string ?? 'ALERT';
@@ -189,8 +189,10 @@ export default function SystemStatusPage() {
                         const hasAlert = !!alertMsg && alertPri > 0;
 
                         return (
-                            <div className="bg-black rounded-xl p-2.5 shadow-2xl shadow-black/40 border-2 border-slate-700">
-                                <div className="bg-black rounded-lg w-[460px] h-[230px] font-mono relative overflow-hidden" style={{ imageRendering: 'pixelated' }}>
+                            <div className="w-[min(94vw,690px)] h-[min(47vw,345px)] flex items-center justify-center">
+                                <div className="origin-center scale-[1] sm:scale-[1.2] lg:scale-[1.5]">
+                                    <div className="bg-black rounded-xl p-2.5 shadow-2xl shadow-black/40 border-2 border-slate-700">
+                                    <div className="bg-black rounded-lg w-[460px] h-[230px] font-mono relative overflow-hidden" style={{ imageRendering: 'pixelated' }}>
                                     {hasAlert ? (
                                         /* Full-screen alert overlay */
                                         <div className={cn(
@@ -243,6 +245,8 @@ export default function SystemStatusPage() {
                                             </div>
                                         </>
                                     )}
+                                    </div>
+                                </div>
                                 </div>
                             </div>
                         );
