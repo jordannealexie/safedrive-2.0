@@ -75,7 +75,7 @@ export async function apiFetch<T = unknown>(path: string, options?: RequestInit)
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
     try {
         const res = await fetch(`${API_URL}${path}`, {
             ...options,
@@ -116,12 +116,13 @@ async function cachedFetch<T = unknown>(
             const data = await apiFetch<T>(path, options);
             if (isRead) setCachedValue(cacheKey, data, ttlMs);
             return data;
-        } catch {
+        } catch (error) {
             if (isRead) {
                 const stale = getCachedValue<T>(cacheKey);
                 if (stale !== null) return stale;
             }
-            throw new Error(`API unreachable and no cache for ${path}`);
+            const reason = error instanceof Error ? error.message : 'Unknown network error';
+            throw new Error(`API unreachable and no cache for ${path} (${reason})`);
         }
     });
 }
