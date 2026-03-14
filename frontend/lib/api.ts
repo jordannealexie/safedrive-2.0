@@ -557,12 +557,33 @@ export const domainApi = {
     deleteDriver: async (id: string) => {
         try {
             await apiFetch(`/api/drivers/${id}`, { method: 'DELETE' });
+            const listKey = 'safedrive_cache_/api/drivers';
+            const detailKey = `safedrive_cache_/api/drivers/${encodeURIComponent(id)}`;
+            memoryCache.delete(listKey);
+            memoryCache.delete(detailKey);
+            if (typeof window !== 'undefined') {
+                try {
+                    localStorage.removeItem(listKey);
+                    localStorage.removeItem(detailKey);
+                } catch {}
+            }
         } catch {
             // Pi offline — delete directly from Supabase
             await supabase.from('alerts').delete().eq('driver', id);
             await supabase.from('sessions').delete().eq('driver_id', id);
             await supabase.from('driver_notes').delete().eq('driver_id', id);
             await supabase.from('drivers').delete().eq('id', id);
+
+            const listKey = 'safedrive_cache_/api/drivers';
+            const detailKey = `safedrive_cache_/api/drivers/${encodeURIComponent(id)}`;
+            memoryCache.delete(listKey);
+            memoryCache.delete(detailKey);
+            if (typeof window !== 'undefined') {
+                try {
+                    localStorage.removeItem(listKey);
+                    localStorage.removeItem(detailKey);
+                } catch {}
+            }
         }
     },
 

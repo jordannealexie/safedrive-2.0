@@ -24,12 +24,18 @@ PHT = timezone(timedelta(hours=8))
 
 _log = logging.getLogger(__name__)
 
+SESSION_GRACE_PERIOD_SECONDS = 20 * 60
+
 # ---------------------------------------------------------------------------
 # Supabase client
 # ---------------------------------------------------------------------------
 
 _SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://idlpmawnxqihjjaqzaky.supabase.co")
-_SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkbHBtYXdueHFpaGpqYXF6YWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDYyNzgsImV4cCI6MjA4ODg4MjI3OH0.blj6SUvha9Hk8ZXXdB8awCeanEQ4RWcNyMnQk40KxjE")
+_SUPABASE_KEY = (
+    os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    or os.environ.get("SUPABASE_KEY")
+    or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkbHBtYXdueHFpaGpqYXF6YWt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzMDYyNzgsImV4cCI6MjA4ODg4MjI3OH0.blj6SUvha9Hk8ZXXdB8awCeanEQ4RWcNyMnQk40KxjE"
+)
 
 _sb = None
 try:
@@ -54,6 +60,12 @@ _alerts: list[dict] = []
 # Active / completed sessions (keyed by driver_id for active ones)
 _active_sessions: dict[str, dict] = {}
 _completed_sessions: list[dict] = []
+
+# Track when an active driver's signal went missing so we can apply grace period.
+_missing_since: dict[str, float] = {}
+
+# Driver IDs explicitly deleted by an operator; avoid recreating them from noisy live state.
+_deleted_drivers: set[str] = set()
 
 # Previous state for change detection
 _prev_state: dict = {}
@@ -265,23 +277,26 @@ def _poll_state():
 def _process_state(data: dict):
     global _prev_state, _session_counter
     now = datetime.now(PHT)
+    now_ts = now.timestamp()
     driver_id = data.get("driver_id", "UNKNOWN")
     state = data.get("drowsiness_state", "ALERT")
     ear = data.get("ear_value", 0.0)
     is_moving = data.get("is_moving", False)
     prev_state_name = _prev_state.get("drowsiness_state", "ALERT")
-    prev_driver = _prev_state.get("driver_id", "")
 
     # Collect items to sync to Supabase after releasing the lock
     sync_driver = None
     sync_alert = None
     sync_session = None
-    sync_session_end = None
+    sync_session_ends = []
     sync_events = []
 
     with _lock:
         # --- Track drivers ---
         if driver_id and driver_id != "UNKNOWN":
+            if driver_id in _deleted_drivers:
+                _prev_state = dict(data)
+                return
             if driver_id not in _drivers:
                 _drivers[driver_id] = {
                     "id": driver_id,
@@ -304,35 +319,45 @@ def _process_state(data: dict):
             drv["detectionStatus"] = "drowsy_detected" if state in ("DROWSY", "CRITICAL") else "monitoring"
             drv["status"] = state if state in ("DROWSY", "CRITICAL") else ("Online" if is_moving else "Normal")
 
-        # --- Session tracking ---
-        if driver_id and driver_id != "UNKNOWN":
-            if driver_id not in _active_sessions:
-                _session_counter += 1
-                _active_sessions[driver_id] = {
-                    "id": f"SES-{now.strftime('%Y%m%d')}-{_session_counter:03d}",
-                    "driverId": driver_id,
-                    "driver": driver_id,
-                    "busId": "BUS-001",
-                    "startTime": now.strftime("%Y-%m-%d %I:%M %p"),
-                    "endTime": None,
-                    "status": "active",
-                    "alertCount": 0,
-                    "drowsinessEvents": 0,
-                    "startTimestamp": now.timestamp(),
-                }
-                if driver_id in _drivers:
-                    _drivers[driver_id]["totalSessions"] += 1
-                    _drivers[driver_id]["todaySessions"] += 1
-                sync_driver = dict(_drivers[driver_id])
-                sync_session = dict(_active_sessions[driver_id])
-        elif driver_id == "UNKNOWN" and prev_driver and prev_driver != "UNKNOWN":
-            # Driver left — end session
-            if prev_driver in _active_sessions:
-                sess = _active_sessions.pop(prev_driver)
+        # --- Session tracking with grace period ---
+        current_driver = driver_id if driver_id and driver_id != "UNKNOWN" else None
+
+        for active_driver in list(_active_sessions.keys()):
+            if active_driver == current_driver:
+                _missing_since.pop(active_driver, None)
+                continue
+
+            if active_driver not in _missing_since:
+                _missing_since[active_driver] = now_ts
+
+            if now_ts - _missing_since[active_driver] >= SESSION_GRACE_PERIOD_SECONDS:
+                sess = _active_sessions.pop(active_driver)
                 sess["endTime"] = now.strftime("%Y-%m-%d %I:%M %p")
                 sess["status"] = "completed"
                 _completed_sessions.append(sess)
-                sync_session_end = dict(sess)
+                sync_session_ends.append(dict(sess))
+                _missing_since.pop(active_driver, None)
+
+        if current_driver and current_driver not in _active_sessions:
+            _session_counter += 1
+            _active_sessions[current_driver] = {
+                "id": f"SES-{now.strftime('%Y%m%d')}-{_session_counter:03d}",
+                "driverId": current_driver,
+                "driver": current_driver,
+                "busId": "BUS-001",
+                "startTime": now.strftime("%Y-%m-%d %I:%M %p"),
+                "endTime": None,
+                "status": "active",
+                "alertCount": 0,
+                "drowsinessEvents": 0,
+                "startTimestamp": now_ts,
+            }
+            _missing_since.pop(current_driver, None)
+            if current_driver in _drivers:
+                _drivers[current_driver]["totalSessions"] += 1
+                _drivers[current_driver]["todaySessions"] += 1
+            sync_driver = dict(_drivers[current_driver])
+            sync_session = dict(_active_sessions[current_driver])
 
         # --- Drowsiness event detection ---
         if state in ("DROWSY", "CRITICAL") and prev_state_name == "ALERT":
@@ -369,7 +394,7 @@ def _process_state(data: dict):
     _prev_state = dict(data)
 
     # Sync to Supabase in background thread (non-blocking)
-    if sync_driver or sync_alert or sync_session or sync_session_end or sync_events:
+    if sync_driver or sync_alert or sync_session or sync_session_ends or sync_events:
         def _do_sync():
             if sync_driver:
                 _sb_upsert_driver(sync_driver)
@@ -377,8 +402,8 @@ def _process_state(data: dict):
                 _sb_insert_alert(sync_alert)
             if sync_session:
                 _sb_upsert_session(sync_session)
-            if sync_session_end:
-                _sb_upsert_session(sync_session_end)
+            for ended_sess in sync_session_ends:
+                _sb_upsert_session(ended_sess)
             for st, sk, sc in sync_events:
                 _sb_upsert_event_stat(st, sk, sc)
         threading.Thread(target=_do_sync, daemon=True).start()
@@ -524,6 +549,8 @@ def list_drivers():
     with _lock:
         result = []
         for drv in _drivers.values():
+            if drv["id"] in _deleted_drivers:
+                continue
             d = dict(drv)
             if d["id"] not in _active_sessions:
                 d["status"] = "Offline"
@@ -537,13 +564,8 @@ def delete_driver(driver_id: str):
     with _lock:
         if driver_id not in _drivers:
             raise HTTPException(status_code=404, detail="Driver not found")
-        del _drivers[driver_id]
-        _active_sessions.pop(driver_id, None)
-        # Remove driver's alerts and sessions
-        _alerts[:] = [a for a in _alerts if a.get("driver") != driver_id]
-        _completed_sessions[:] = [s for s in _completed_sessions if s.get("driverId") != driver_id]
 
-    # Delete from Supabase
+    # Delete from Supabase first when configured; fail fast if persistence fails.
     if _sb:
         try:
             _sb.table("alerts").delete().eq("driver", driver_id).execute()
@@ -552,6 +574,16 @@ def delete_driver(driver_id: str):
             _sb.table("drivers").delete().eq("id", driver_id).execute()
         except Exception as e:
             _log.warning("Supabase delete failed for %s: %s", driver_id, e)
+            raise HTTPException(status_code=500, detail="Failed to delete driver from database")
+
+    with _lock:
+        del _drivers[driver_id]
+        _deleted_drivers.add(driver_id)
+        _active_sessions.pop(driver_id, None)
+        _missing_since.pop(driver_id, None)
+        # Remove driver's alerts and sessions
+        _alerts[:] = [a for a in _alerts if a.get("driver") != driver_id]
+        _completed_sessions[:] = [s for s in _completed_sessions if s.get("driverId") != driver_id]
 
     return {"ok": True}
 
