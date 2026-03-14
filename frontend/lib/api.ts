@@ -145,8 +145,14 @@ export function getRuntimeConfigDiagnostics() {
     if (WS_URL && !/^wss?:\/\//i.test(WS_URL)) {
         issues.push('NEXT_PUBLIC_WS_URL must start with ws:// or wss://.');
     }
+    if (API_URL && !/^https?:\/\//i.test(API_URL)) {
+        issues.push('NEXT_PUBLIC_API_URL must start with http:// or https://.');
+    }
     if (!IS_DEV && WS_URL.startsWith('ws://')) {
         issues.push('NEXT_PUBLIC_WS_URL should use wss:// in production.');
+    }
+    if (!IS_DEV && API_URL.startsWith('http://')) {
+        issues.push('NEXT_PUBLIC_API_URL should use https:// in production.');
     }
 
     return {

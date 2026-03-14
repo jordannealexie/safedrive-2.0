@@ -62,7 +62,8 @@ export default function LiveMonitoringPage() {
             })
             .catch((error) => {
                 console.error(error);
-                setLoadError('Unable to load live buses from API.');
+                const msg = error instanceof Error ? error.message : 'Unknown error';
+                setLoadError(`Unable to load live buses from API: ${msg}`);
             });
     }, []);
 
@@ -73,7 +74,8 @@ export default function LiveMonitoringPage() {
             setLoadError(null);
         } catch (e) {
             console.error(e);
-            setLoadError('Unable to refresh live buses from API.');
+            const msg = e instanceof Error ? e.message : 'Unknown error';
+            setLoadError(`Unable to refresh live buses from API: ${msg}`);
         }
         setRefreshing(false);
     };
