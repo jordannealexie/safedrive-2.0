@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
-import { domainApi, getRuntimeConfigDiagnostics, type BusRecord } from '@/lib/api';
+import { domainApi, getRuntimeConfigDiagnostics, type BusRecord, type DriverSession, type WorkHours } from '@/lib/api';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false }) as any;
@@ -49,12 +49,37 @@ export default function LiveMonitoringPage() {
     const [isClient, setIsClient] = useState(false);
     const { data: sensorData, connected } = useLiveSensor();
     const [buses, setBuses] = useState<BusRecord[]>([]);
+    const [sessions, setSessions] = useState<DriverSession[]>([]);
+    const [workHours, setWorkHours] = useState<WorkHours[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [refreshing, setRefreshing] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [lastKnownGps, setLastKnownGps] = useState<[number, number] | null>(null);
+
+    const loadLiveData = useCallback(async () => {
+        const [busRows, sessionRows, workHourRows] = await Promise.all([
+            domainApi.getBuses(),
+            domainApi.getSessions().catch(() => []),
+            domainApi.getWorkHours().catch(() => []),
+        ]);
+        setBuses(busRows);
+        setSessions(sessionRows);
+        setWorkHours(workHourRows);
+        setLoadError(null);
+    }, []);
 
     useEffect(() => {
         setIsClient(true);
+        try {
+            const rawCached = localStorage.getItem('safedrive_last_valid_gps');
+            if (rawCached) {
+                const parsed = JSON.parse(rawCached) as { lat?: number; lng?: number };
+                if (isValidCoordinate(parsed.lat, parsed.lng)) {
+                    setLastKnownGps([parsed.lat, parsed.lng]);
+                }
+            }
+        } catch {}
+
         import('leaflet').then(L => {
             delete (L.Icon.Default.prototype as any)._getIconUrl;
             L.Icon.Default.mergeOptions({
@@ -63,23 +88,33 @@ export default function LiveMonitoringPage() {
                 shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
             });
         });
-        domainApi.getBuses()
-            .then((rows) => {
-                setBuses(rows);
-                setLoadError(null);
-            })
-            .catch((error) => {
+        loadLiveData().catch((error) => {
                 console.error(error);
                 const msg = error instanceof Error ? error.message : 'Unknown error';
                 setLoadError(`Unable to load live buses from API: ${msg}`);
             });
-    }, []);
+        const timer = setInterval(() => {
+            loadLiveData().catch(() => {
+                // keep previous snapshot if intermittent request fails
+            });
+        }, 10000);
+
+        return () => clearInterval(timer);
+    }, [loadLiveData]);
+
+    useEffect(() => {
+        if (!isValidCoordinate(sensorData?.gps?.latitude, sensorData?.gps?.longitude)) return;
+        const point: [number, number] = [sensorData.gps.latitude!, sensorData.gps.longitude!];
+        setLastKnownGps(point);
+        try {
+            localStorage.setItem('safedrive_last_valid_gps', JSON.stringify({ lat: point[0], lng: point[1] }));
+        } catch {}
+    }, [sensorData?.gps?.latitude, sensorData?.gps?.longitude]);
 
     const refreshMap = async () => {
         setRefreshing(true);
         try {
-            setBuses(await domainApi.getBuses());
-            setLoadError(null);
+            await loadLiveData();
         } catch (e) {
             console.error(e);
             const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -90,10 +125,8 @@ export default function LiveMonitoringPage() {
 
     // Build live locations from sensor data + bus records
     const raw = sensorData?.oled?.raw as Record<string, unknown> | undefined;
-    const PH_CENTER: [number, number] = [12.8797, 121.7740];
-    const sensorSpeed = sensorData?.gps?.speed_kmh ?? 0;
-    const sensorHasFix = sensorData?.gps?.fix === true && isValidCoordinate(sensorData?.gps?.latitude, sensorData?.gps?.longitude);
-    const sensorHasUsableCoords = isValidCoordinate(sensorData?.gps?.latitude, sensorData?.gps?.longitude) && (sensorHasFix || sensorSpeed >= 3);
+    const PH_CENTER: [number, number] = [14.5995, 120.9842];
+    const sensorHasUsableCoords = isValidCoordinate(sensorData?.gps?.latitude, sensorData?.gps?.longitude);
 
     const sourceBuses: BusRecord[] = buses.length > 0
         ? buses
@@ -112,47 +145,48 @@ export default function LiveMonitoringPage() {
             : []);
 
     const liveLocations: LiveLocation[] = sourceBuses.map(bus => {
+        const effectiveDriverId = ((raw?.driver_id as string) || bus.driverId || bus.driver || '').trim();
+        const activeSession = sessions.find(s => s.driverId === effectiveDriverId && s.status === 'active');
+        const wh = workHours.find(w => w.driverId === effectiveDriverId);
+        const whActive = wh?.sessions.find(s => s.active);
+
         const busHasValidLocation = isValidCoordinate(bus.location?.[0], bus.location?.[1]);
         const lat = sensorHasUsableCoords
             ? sensorData!.gps.latitude!
-            : (busHasValidLocation ? bus.location[0] : null);
+            : (busHasValidLocation ? bus.location[0] : (lastKnownGps?.[0] ?? PH_CENTER[0]));
         const lng = sensorHasUsableCoords
             ? sensorData!.gps.longitude!
-            : (busHasValidLocation ? bus.location[1] : null);
-
-        if (lat == null || lng == null) {
-            return null;
-        }
+            : (busHasValidLocation ? bus.location[1] : (lastKnownGps?.[1] ?? PH_CENTER[1]));
 
         return {
             id: bus.id,
             lat,
             lng,
-            driver: raw?.driver_id as string ?? bus.driver,
+            driver: effectiveDriverId || bus.driver,
             status: raw?.drowsiness_state as string ?? (sensorData?.is_moving ? 'Normal' : 'Stationary'),
             speed: sensorHasUsableCoords
                 ? (sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed)
                 : bus.speed,
             lastAlert: 'N/A',
-            session: bus.sessionId,
+            session: activeSession?.id ?? bus.sessionId,
             detectionStatus: bus.detectionStatus,
             baselineStatus: raw ? 'active' : 'idle',
             baselineConfidence: 0,
             baselineDeviation: 0,
-            sessionDuration: '—',
-            todayWorkHours: 0,
+            sessionDuration: activeSession?.duration ?? (whActive ? `${whActive.duration.toFixed(2)}h` : '—'),
+            todayWorkHours: wh?.todayTotal ?? 0,
             vehicleMoving: sensorData?.is_moving ?? false,
         };
     }).filter(loc => {
-        if (!loc) return false;
         if (!searchQuery) return true;
         const q = searchQuery.toLowerCase();
         return loc.driver.toLowerCase().includes(q) || loc.id.toLowerCase().includes(q);
-    }) as LiveLocation[];
+    });
 
     const mapCenter: [number, number] = liveLocations.length > 0
         ? [liveLocations[0].lat, liveLocations[0].lng]
         : PH_CENTER;
+    const hasAnyRealGps = sensorHasUsableCoords || sourceBuses.some(b => isValidCoordinate(b.location?.[0], b.location?.[1])) || !!lastKnownGps;
 
     const configDiag = getRuntimeConfigDiagnostics();
 
@@ -169,6 +203,13 @@ export default function LiveMonitoringPage() {
                             ))}
                         </ul>
                     )}
+                </div>
+            )}
+
+            {!hasAnyRealGps && (
+                <div className="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sky-900">
+                    <p className="text-xs font-black uppercase tracking-widest">GPS Notice</p>
+                    <p className="mt-1 text-sm font-semibold">Live GPS fix is currently unavailable. Marker is shown at fallback city center until valid coordinates are received.</p>
                 </div>
             )}
 

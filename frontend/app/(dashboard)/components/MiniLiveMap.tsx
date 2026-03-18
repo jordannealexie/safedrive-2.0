@@ -1,6 +1,6 @@
 'use client';
 
-import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Circle, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
@@ -20,14 +20,13 @@ export default function MiniLiveMap() {
 
     const lat = sensorData?.gps?.latitude;
     const lng = sensorData?.gps?.longitude;
-    const speed = sensorData?.gps?.speed_kmh ?? 0;
-    const hasFix = sensorData?.gps?.fix === true;
     const hasValidGps = typeof lat === 'number' && typeof lng === 'number' && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
-    const hasUsableGps = hasValidGps && (hasFix || speed >= 3);
+    const hasUsableGps = hasValidGps;
     const livePosition: [number, number] | null = hasUsableGps ? [lat, lng] : null;
 
-    const fallbackCenter: [number, number] = [12.8797, 121.7740];
+    const fallbackCenter: [number, number] = [14.5995, 120.9842];
     const center: [number, number] = livePosition ?? fallbackCenter;
+    const markerPosition: [number, number] = livePosition ?? fallbackCenter;
     
     return (
         <div className="h-full w-full">
@@ -45,22 +44,23 @@ export default function MiniLiveMap() {
                         : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                     }
                 />
-                {livePosition && (
-                    <Marker
-                        position={livePosition}
-                        icon={icon}
-                    >
-                        <Circle
-                            center={livePosition}
-                            radius={400}
-                            pathOptions={{
-                                color: '#ED1E24',
-                                fillColor: '#ED1E24',
-                                fillOpacity: 0.1
-                            }}
-                        />
-                    </Marker>
-                )}
+                <Marker
+                    position={markerPosition}
+                    icon={icon}
+                >
+                    <Popup>
+                        {livePosition ? 'BUS-001 live GPS' : 'GPS fix unavailable - showing fallback center'}
+                    </Popup>
+                    <Circle
+                        center={markerPosition}
+                        radius={400}
+                        pathOptions={{
+                            color: livePosition ? '#ED1E24' : '#64748b',
+                            fillColor: livePosition ? '#ED1E24' : '#64748b',
+                            fillOpacity: 0.1
+                        }}
+                    />
+                </Marker>
             </MapContainer>
         </div>
     );
