@@ -75,7 +75,9 @@ export default function LiveMonitoringPage() {
             if (rawCached) {
                 const parsed = JSON.parse(rawCached) as { lat?: number; lng?: number };
                 if (isValidCoordinate(parsed.lat, parsed.lng)) {
-                    setLastKnownGps([parsed.lat, parsed.lng]);
+                    const lat = parsed.lat;
+                    const lng = parsed.lng;
+                    setLastKnownGps([lat, lng]);
                 }
             }
         } catch {}
