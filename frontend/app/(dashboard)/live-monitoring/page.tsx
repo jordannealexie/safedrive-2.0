@@ -74,7 +74,7 @@ export default function LiveMonitoringPage() {
             const rawCached = localStorage.getItem('safedrive_last_valid_gps');
             if (rawCached) {
                 const parsed = JSON.parse(rawCached) as { lat?: number; lng?: number };
-                if (isValidCoordinate(parsed.lat, parsed.lng)) {
+                if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number' && isValidCoordinate(parsed.lat, parsed.lng)) {
                     const lat = parsed.lat;
                     const lng = parsed.lng;
                     setLastKnownGps([lat, lng]);
