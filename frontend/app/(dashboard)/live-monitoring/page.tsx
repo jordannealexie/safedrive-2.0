@@ -208,13 +208,6 @@ export default function LiveMonitoringPage() {
                 </div>
             )}
 
-            {!hasAnyRealGps && (
-                <div className="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sky-900">
-                    <p className="text-xs font-black uppercase tracking-widest">GPS Notice</p>
-                    <p className="mt-1 text-sm font-semibold">Live GPS fix is currently unavailable. Marker is shown at fallback city center until valid coordinates are received.</p>
-                </div>
-            )}
-
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Live Monitoring</h1>

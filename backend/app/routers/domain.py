@@ -777,7 +777,6 @@ def list_work_hours():
         total_h = 0.0
         sessions = []
         driver_alert_times = sorted(alert_times_by_driver.get(driver_id, []))
-        latest_alert_dt = driver_alert_times[-1] if driver_alert_times else None
         for s in all_sessions:
             if s.get("driverId") != driver_id:
                 continue
@@ -787,15 +786,18 @@ def list_work_hours():
             session_end_display = _format_session_clock(s.get("endTime"))
 
             # If a completed session end time is stretched far beyond observed
-            # alert activity, cap it using the latest alert + session grace.
-            if s.get("status") == "completed" and latest_alert_dt is not None:
+            # alert activity for that specific session window.
+            if s.get("status") == "completed":
                 start_dt = _parse_session_dt(s.get("startTime"))
                 end_dt = _parse_session_dt(s.get("endTime"))
-                if start_dt and end_dt and latest_alert_dt >= start_dt:
-                    inferred_end = latest_alert_dt + timedelta(seconds=SESSION_GRACE_PERIOD_SECONDS)
-                    if inferred_end < end_dt:
-                        dur = max(0.0, (inferred_end - start_dt).total_seconds() / 3600)
-                        session_end_display = inferred_end.strftime("%I:%M %p")
+                if start_dt and end_dt and driver_alert_times:
+                    session_alerts = [t for t in driver_alert_times if start_dt <= t <= end_dt]
+                    if session_alerts:
+                        latest_session_alert = session_alerts[-1]
+                        inferred_end = latest_session_alert + timedelta(seconds=SESSION_GRACE_PERIOD_SECONDS)
+                        if inferred_end < end_dt:
+                            dur = max(0.0, (inferred_end - start_dt).total_seconds() / 3600)
+                            session_end_display = inferred_end.strftime("%I:%M %p")
 
             total_h += dur
             sessions.append(
