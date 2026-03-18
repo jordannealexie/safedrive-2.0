@@ -4,9 +4,33 @@ const RAW_API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || '';
 const RAW_WS_URL = process.env.NEXT_PUBLIC_WS_URL?.trim() || '';
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
+function isLocalHostUrl(url: string): boolean {
+    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url)
+        || /^wss?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url);
+}
+
+function normalizeApiUrl(rawUrl: string): string {
+    if (!rawUrl) return rawUrl;
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && rawUrl.startsWith('http://') && !isLocalHostUrl(rawUrl)) {
+        return rawUrl.replace(/^http:\/\//i, 'https://');
+    }
+    return rawUrl;
+}
+
+function deriveWsUrl(rawWsUrl: string, apiUrl: string): string {
+    let wsUrl = rawWsUrl;
+    if (!wsUrl && apiUrl) {
+        wsUrl = apiUrl.replace(/^https?:\/\//i, (m) => m.toLowerCase() === 'https://' ? 'wss://' : 'ws://');
+    }
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && wsUrl.startsWith('ws://') && !isLocalHostUrl(wsUrl)) {
+        wsUrl = wsUrl.replace(/^ws:\/\//i, 'wss://');
+    }
+    return wsUrl;
+}
+
 // Allow localhost convenience only in development. In production, force explicit config.
-const API_URL = RAW_API_URL || (IS_DEV ? 'http://localhost:8000' : '');
-const WS_URL = RAW_WS_URL || (IS_DEV ? 'ws://localhost:8000' : '');
+const API_URL = normalizeApiUrl(RAW_API_URL || (IS_DEV ? 'http://localhost:8000' : ''));
+const WS_URL = deriveWsUrl(RAW_WS_URL || (IS_DEV ? 'ws://localhost:8000' : ''), API_URL);
 const DEFAULT_CACHE_TTL_MS = 8000;
 const DELETED_ALERT_IDS_KEY = 'safedrive_deleted_alert_ids';
 
