@@ -7,7 +7,7 @@ USE_MOCK_SENSORS = os.getenv("USE_MOCK_SENSORS", "true").lower() == "true"
 
 BUZZER_GPIO_PIN = int(os.getenv("BUZZER_GPIO_PIN", "17"))
 
-GPS_SERIAL_PORT = os.getenv("GPS_SERIAL_PORT", "/dev/ttyAMA0")
+GPS_SERIAL_PORT = os.getenv("GPS_SERIAL_PORT", "/dev/serial0")
 GPS_BAUD_RATE = int(os.getenv("GPS_BAUD_RATE", "9600"))
 
 MPU6050_I2C_ADDRESS = int(os.getenv("MPU6050_I2C_ADDRESS", "0x68"), 16)

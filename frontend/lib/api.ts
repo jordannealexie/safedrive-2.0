@@ -8,6 +8,7 @@ const IS_DEV = process.env.NODE_ENV !== 'production';
 const API_URL = RAW_API_URL || (IS_DEV ? 'http://localhost:8000' : '');
 const WS_URL = RAW_WS_URL || (IS_DEV ? 'ws://localhost:8000' : '');
 const DEFAULT_CACHE_TTL_MS = 8000;
+const DELETED_ALERT_IDS_KEY = 'safedrive_deleted_alert_ids';
 
 type CacheEntry = { data: unknown; expiresAt: number };
 
@@ -59,6 +60,34 @@ function setCachedValue<T>(cacheKey: string, data: T, ttlMs: number): void {
     if (typeof window !== 'undefined') {
         try { localStorage.setItem(cacheKey, JSON.stringify(entry)); } catch {}
     }
+}
+
+function getDeletedAlertIds(): Set<string> {
+    if (typeof window === 'undefined') return new Set();
+    try {
+        const raw = localStorage.getItem(DELETED_ALERT_IDS_KEY);
+        if (!raw) return new Set();
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return new Set();
+        return new Set(parsed.filter((v): v is string => typeof v === 'string'));
+    } catch {
+        return new Set();
+    }
+}
+
+function rememberDeletedAlertId(id: string): void {
+    if (typeof window === 'undefined') return;
+    try {
+        const ids = getDeletedAlertIds();
+        ids.add(id);
+        localStorage.setItem(DELETED_ALERT_IDS_KEY, JSON.stringify(Array.from(ids)));
+    } catch {}
+}
+
+function filterDeletedAlerts(items: AlertRecord[]): AlertRecord[] {
+    const deletedIds = getDeletedAlertIds();
+    if (deletedIds.size === 0) return items;
+    return items.filter(item => !deletedIds.has(item.id));
 }
 
 async function dedupedRequest<T>(requestKey: string, loader: () => Promise<T>): Promise<T> {
@@ -449,6 +478,61 @@ function mapAlertRow(r: Record<string, unknown>): AlertRecord {
     };
 }
 
+function parseAlertTimestamp(timestamp: string): Date | null {
+    const iso = new Date(timestamp);
+    if (!Number.isNaN(iso.getTime())) return iso;
+
+    const match = timestamp.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (!match) return null;
+
+    const [, y, m, d, hh, mm, meridiem] = match;
+    let hour = parseInt(hh, 10);
+    if (meridiem.toUpperCase() === 'PM' && hour < 12) hour += 12;
+    if (meridiem.toUpperCase() === 'AM' && hour === 12) hour = 0;
+
+    return new Date(
+        parseInt(y, 10),
+        parseInt(m, 10) - 1,
+        parseInt(d, 10),
+        hour,
+        parseInt(mm, 10),
+        0,
+        0,
+    );
+}
+
+function buildIncidentsByDay(alerts: AlertRecord[]): IncidentPoint[] {
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+
+    alerts.forEach(alert => {
+        const dt = parseAlertTimestamp(alert.timestamp);
+        if (!dt) return;
+        const idx = (dt.getDay() + 6) % 7; // JS: Sun=0 -> Mon=0
+        counts[idx] += 1;
+    });
+
+    return labels.map((day, i) => ({ day, incidents: counts[i] }));
+}
+
+function buildPeakHours(alerts: AlertRecord[]): PeakHourPoint[] {
+    const bucketOrder = [0, 4, 8, 12, 16, 20];
+    const byBucket: Record<number, number> = { 0: 0, 4: 0, 8: 0, 12: 0, 16: 0, 20: 0 };
+
+    alerts.forEach(alert => {
+        const dt = parseAlertTimestamp(alert.timestamp);
+        if (!dt) return;
+        const hour = dt.getHours();
+        const bucket = Math.min(20, Math.floor(hour / 4) * 4);
+        byBucket[bucket] += 1;
+    });
+
+    return bucketOrder.map(h => ({
+        hour: `${String(h).padStart(2, '0')}:00`,
+        incidents: byBucket[h] || 0,
+    }));
+}
+
 function mapSessionRow(r: Record<string, unknown>): DriverSession {
     return {
         id: r.id as string,
@@ -479,40 +563,55 @@ async function supabaseFallback<T>(table: string, mapper: (r: Record<string, unk
 export const domainApi = {
     getDashboard: async (): Promise<DashboardData> => {
         try {
-            return await cachedFetch<DashboardData>('/api/dashboard/stats');
+            const dashboard = await cachedFetch<DashboardData>('/api/dashboard/stats');
+            const liveAlerts = await domainApi.getAlerts();
+            const alertCount = liveAlerts.length;
+
+            return {
+                ...dashboard,
+                stats: (dashboard.stats || []).map(stat => {
+                    if (stat.label === 'Drowsy Today' || stat.label === 'Alerts Today') {
+                        return { ...stat, value: String(alertCount) };
+                    }
+                    return stat;
+                }),
+                recentAlerts: liveAlerts.slice(0, 5).map(a => ({
+                    id: a.id,
+                    type: a.type,
+                    driver: a.driver,
+                    time: a.timestamp,
+                    status: a.status,
+                    sessionId: a.sessionId,
+                    alarmTriggered: a.status === 'Active' && a.alarmType !== 'none',
+                })),
+                drowsinessIncidents: buildIncidentsByDay(liveAlerts),
+                peakHours: buildPeakHours(liveAlerts),
+            };
         } catch {
             // Build dashboard from Supabase tables
-            const [drivers, alerts, eventStats] = await Promise.all([
+            const [drivers, alerts] = await Promise.all([
                 supabase.from('drivers').select('*').then(r => r.data || []),
                 supabase.from('alerts').select('*').order('created_at', { ascending: false }).limit(50).then(r => r.data || []),
-                supabase.from('event_stats').select('*').then(r => r.data || []),
             ]);
-            const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            const hourLabels = ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'];
-            const byDay: Record<number, number> = {};
-            const byHour: Record<number, number> = {};
-            eventStats.forEach((r: { stat_type: string; stat_key: number; count: number }) => {
-                if (r.stat_type === 'daily') byDay[r.stat_key] = r.count;
-                if (r.stat_type === 'hourly') byHour[r.stat_key] = r.count;
-            });
+            const visibleAlerts = filterDeletedAlerts((alerts as Record<string, unknown>[]).map(mapAlertRow));
 
             return {
                 stats: [
                     { label: 'Registered Drivers', value: String(drivers.length), trend: '', icon: 'Users' },
-                    { label: 'Drowsy Today', value: String(alerts.length), trend: '', icon: 'UserX', color: 'text-brand-red' },
-                    { label: 'Alerts Today', value: String(alerts.length), trend: '', icon: 'AlertTriangle' },
+                    { label: 'Drowsy Today', value: String(visibleAlerts.length), trend: '', icon: 'UserX', color: 'text-brand-red' },
+                    { label: 'Alerts Today', value: String(visibleAlerts.length), trend: '', icon: 'AlertTriangle' },
                     { label: 'Active Sessions', value: '0', trend: '', icon: 'Cpu' },
                 ],
-                drowsinessIncidents: dayNames.map((d, i) => ({ day: d, incidents: byDay[i] || 0 })),
-                peakHours: hourLabels.map(h => ({ hour: h, incidents: byHour[parseInt(h)] || 0 })),
-                recentAlerts: alerts.slice(0, 5).map((a: Record<string, unknown>) => ({
-                    id: a.id as string,
-                    type: a.type as string,
-                    driver: a.driver as string,
-                    time: a.timestamp as string,
-                    status: (a.status as string) || 'Active',
-                    sessionId: (a.session_id as string) || '',
-                    alarmTriggered: true,
+                drowsinessIncidents: buildIncidentsByDay(visibleAlerts),
+                peakHours: buildPeakHours(visibleAlerts),
+                recentAlerts: visibleAlerts.slice(0, 5).map(a => ({
+                    id: a.id,
+                    type: a.type,
+                    driver: a.driver,
+                    time: a.timestamp,
+                    status: a.status,
+                    sessionId: a.sessionId,
+                    alarmTriggered: a.status === 'Active' && a.alarmType !== 'none',
                 })),
                 detectionFeed: [],
             };
@@ -581,13 +680,13 @@ export const domainApi = {
                     .limit(200);
                 if (error) throw error;
                 if (data && data.length > 0) {
-                    const mapped = data.map(mapAlertRow);
+                    const mapped = filterDeletedAlerts(data.map(mapAlertRow));
                     setCachedValue(alertsCacheKey, mapped, DEFAULT_CACHE_TTL_MS);
                     return mapped;
                 }
             } catch {}
 
-            const fallback = await cachedFetch<AlertRecord[]>('/api/alerts');
+            const fallback = filterDeletedAlerts(await cachedFetch<AlertRecord[]>('/api/alerts'));
             setCachedValue(alertsCacheKey, fallback, DEFAULT_CACHE_TTL_MS);
             return fallback;
         });
@@ -596,10 +695,55 @@ export const domainApi = {
 
     // --- Mutations (write directly to Supabase) ---
     updateAlertStatus: async (id: string, status: string) => {
-        await supabase.from('alerts').update({ status }).eq('id', id);
+        try {
+            await apiFetch(`/api/alerts/${encodeURIComponent(id)}`, {
+                method: 'PUT',
+                body: JSON.stringify({ status }),
+            });
+        } catch {
+            await supabase.from('alerts').update({ status }).eq('id', id);
+        }
+
+        const alertsCacheKey = 'safedrive_cache_domain_alerts';
+        memoryCache.delete(alertsCacheKey);
+        if (typeof window !== 'undefined') {
+            try { localStorage.removeItem(alertsCacheKey); } catch {}
+        }
     },
     updateAllAlertStatus: async (status: string) => {
-        await supabase.from('alerts').update({ status }).neq('id', '');
+        try {
+            await apiFetch('/api/alerts', {
+                method: 'PUT',
+                body: JSON.stringify({ status }),
+            });
+        } catch {
+            await supabase.from('alerts').update({ status }).neq('id', '');
+        }
+
+        const alertsCacheKey = 'safedrive_cache_domain_alerts';
+        memoryCache.delete(alertsCacheKey);
+        if (typeof window !== 'undefined') {
+            try { localStorage.removeItem(alertsCacheKey); } catch {}
+        }
+    },
+    deleteAlert: async (id: string) => {
+        try {
+            await apiFetch(`/api/alerts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            rememberDeletedAlertId(id);
+        } catch {
+            // Pi offline or route unavailable — delete directly from Supabase
+            const { error } = await supabase.from('alerts').delete().eq('id', id).select('id');
+            if (error) {
+                throw new Error(`Failed to delete alert ${id}: ${error.message}`);
+            }
+            rememberDeletedAlertId(id);
+        }
+
+        const alertsCacheKey = 'safedrive_cache_domain_alerts';
+        memoryCache.delete(alertsCacheKey);
+        if (typeof window !== 'undefined') {
+            try { localStorage.removeItem(alertsCacheKey); } catch {}
+        }
     },
     deleteDriver: async (id: string) => {
         try {

@@ -36,6 +36,14 @@ interface LiveLocation {
     vehicleMoving: boolean;
 }
 
+function isValidCoordinate(lat: number | null | undefined, lng: number | null | undefined): lat is number {
+    if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+    if (lat === 0 && lng === 0) return false;
+    return true;
+}
+
 export default function LiveMonitoringPage() {
     const [selectedBus, setSelectedBus] = useState<LiveLocation | null>(null);
     const [isClient, setIsClient] = useState(false);
@@ -82,18 +90,21 @@ export default function LiveMonitoringPage() {
 
     // Build live locations from sensor data + bus records
     const raw = sensorData?.oled?.raw as Record<string, unknown> | undefined;
-    const DEFAULT_LAT = 14.5995;
-    const DEFAULT_LNG = 120.9842;
+    const PH_CENTER: [number, number] = [12.8797, 121.7740];
+    const sensorSpeed = sensorData?.gps?.speed_kmh ?? 0;
+    const sensorHasFix = sensorData?.gps?.fix === true && isValidCoordinate(sensorData?.gps?.latitude, sensorData?.gps?.longitude);
+    const sensorHasUsableCoords = isValidCoordinate(sensorData?.gps?.latitude, sensorData?.gps?.longitude) && (sensorHasFix || sensorSpeed >= 3);
+
     const sourceBuses: BusRecord[] = buses.length > 0
         ? buses
-        : (sensorData?.gps?.latitude != null && sensorData?.gps?.longitude != null
+        : (sensorHasUsableCoords
             ? [{
                 id: 'BUS-LIVE',
                 driver: (raw?.driver_id as string) ?? 'LIVE',
                 status: sensorData?.is_moving ? 'Online' : 'Stationary',
                 battery: '—',
                 speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : '0 km/h',
-                location: [sensorData.gps.latitude, sensorData.gps.longitude],
+                location: [sensorData!.gps.latitude!, sensorData!.gps.longitude!],
                 driverId: (raw?.driver_id as string) ?? 'LIVE',
                 detectionStatus: (raw?.drowsiness_state as string)?.toLowerCase() ?? 'monitoring',
                 sessionId: '',
@@ -101,15 +112,27 @@ export default function LiveMonitoringPage() {
             : []);
 
     const liveLocations: LiveLocation[] = sourceBuses.map(bus => {
-        const lat = sensorData?.gps?.latitude || bus.location[0] || DEFAULT_LAT;
-        const lng = sensorData?.gps?.longitude || bus.location[1] || DEFAULT_LNG;
+        const busHasValidLocation = isValidCoordinate(bus.location?.[0], bus.location?.[1]);
+        const lat = sensorHasUsableCoords
+            ? sensorData!.gps.latitude!
+            : (busHasValidLocation ? bus.location[0] : null);
+        const lng = sensorHasUsableCoords
+            ? sensorData!.gps.longitude!
+            : (busHasValidLocation ? bus.location[1] : null);
+
+        if (lat == null || lng == null) {
+            return null;
+        }
+
         return {
             id: bus.id,
             lat,
             lng,
             driver: raw?.driver_id as string ?? bus.driver,
             status: raw?.drowsiness_state as string ?? (sensorData?.is_moving ? 'Normal' : 'Stationary'),
-            speed: sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed,
+            speed: sensorHasUsableCoords
+                ? (sensorData?.gps?.speed_kmh != null ? `${sensorData.gps.speed_kmh.toFixed(0)} km/h` : bus.speed)
+                : bus.speed,
             lastAlert: 'N/A',
             session: bus.sessionId,
             detectionStatus: bus.detectionStatus,
@@ -121,14 +144,15 @@ export default function LiveMonitoringPage() {
             vehicleMoving: sensorData?.is_moving ?? false,
         };
     }).filter(loc => {
+        if (!loc) return false;
         if (!searchQuery) return true;
         const q = searchQuery.toLowerCase();
         return loc.driver.toLowerCase().includes(q) || loc.id.toLowerCase().includes(q);
-    });
+    }) as LiveLocation[];
 
-    const mapCenter: [number, number] = sensorData?.gps?.latitude != null
-        ? [sensorData.gps.latitude, sensorData.gps.longitude!]
-        : [14.5995, 120.9842];
+    const mapCenter: [number, number] = liveLocations.length > 0
+        ? [liveLocations[0].lat, liveLocations[0].lng]
+        : PH_CENTER;
 
     const configDiag = getRuntimeConfigDiagnostics();
 

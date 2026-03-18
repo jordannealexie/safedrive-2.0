@@ -1,6 +1,6 @@
 'use client';
 
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
@@ -18,14 +18,21 @@ export default function MiniLiveMap() {
     const { theme } = useUIStore();
     const { data: sensorData } = useLiveSensor();
 
-    const lat = sensorData?.gps?.latitude || 14.5995;
-    const lng = sensorData?.gps?.longitude || 120.9842;
-    const position: [number, number] = [lat, lng];
+    const lat = sensorData?.gps?.latitude;
+    const lng = sensorData?.gps?.longitude;
+    const speed = sensorData?.gps?.speed_kmh ?? 0;
+    const hasFix = sensorData?.gps?.fix === true;
+    const hasValidGps = typeof lat === 'number' && typeof lng === 'number' && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+    const hasUsableGps = hasValidGps && (hasFix || speed >= 3);
+    const livePosition: [number, number] | null = hasUsableGps ? [lat, lng] : null;
+
+    const fallbackCenter: [number, number] = [12.8797, 121.7740];
+    const center: [number, number] = livePosition ?? fallbackCenter;
     
     return (
         <div className="h-full w-full">
             <MapContainer
-                center={position} 
+                center={center}
                 zoom={12}
                 scrollWheelZoom={false}
                 zoomControl={false}
@@ -38,20 +45,22 @@ export default function MiniLiveMap() {
                         : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                     }
                 />
-                <Marker 
-                    position={position} 
-                    icon={icon}
-                >
-                    <Circle 
-                        center={position}
-                        radius={400}
-                        pathOptions={{ 
-                            color: '#ED1E24', 
-                            fillColor: '#ED1E24', 
-                            fillOpacity: 0.1 
-                        }}
-                    />
-                </Marker>
+                {livePosition && (
+                    <Marker
+                        position={livePosition}
+                        icon={icon}
+                    >
+                        <Circle
+                            center={livePosition}
+                            radius={400}
+                            pathOptions={{
+                                color: '#ED1E24',
+                                fillColor: '#ED1E24',
+                                fillOpacity: 0.1
+                            }}
+                        />
+                    </Marker>
+                )}
             </MapContainer>
         </div>
     );

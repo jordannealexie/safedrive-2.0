@@ -318,7 +318,9 @@ export default function DashboardPage() {
                                                         <Volume2 className="w-3 h-3" /> Active
                                                     </span>
                                                 ) : (
-                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Visual Only</span>
+                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                        {alert.status === 'Resolved' ? 'Resolved' : 'Inactive'}
+                                                    </span>
                                                 )}
                                             </td>
                                         </tr>

@@ -24,7 +24,7 @@ PHT = timezone(timedelta(hours=8))
 
 _log = logging.getLogger(__name__)
 
-SESSION_GRACE_PERIOD_SECONDS = 20 * 60
+SESSION_GRACE_PERIOD_SECONDS = 30 * 60
 DELETED_DRIVER_COOLDOWN_SECONDS = 60
 
 # ---------------------------------------------------------------------------
@@ -134,6 +134,16 @@ def _sb_insert_alert(alert: dict):
         _log.warning("Supabase alert insert failed: %s", e)
 
 
+def _sb_update_alert_status(alert_id: str, status: str):
+    """Update an alert status in Supabase."""
+    if not _sb:
+        return
+    try:
+        _sb.table("alerts").update({"status": status}).eq("id", alert_id).execute()
+    except Exception as e:
+        _log.warning("Supabase alert status update failed (%s -> %s): %s", alert_id, status, e)
+
+
 def _sb_upsert_session(sess: dict):
     """Upsert a session record to Supabase."""
     if not _sb:
@@ -212,9 +222,10 @@ def _load_from_supabase():
                 "sessionId": r.get("session_id", ""),
             })
 
-        # Load sessions — mark old active ones as completed
+        # Load sessions
         rows = _sb.table("sessions").select("*").order("created_at", desc=True).limit(200).execute().data
         max_counter = 0
+        active_loaded: set[str] = set()
         for r in rows:
             # Extract counter from session ID like SES-20260312-003
             try:
@@ -237,11 +248,15 @@ def _load_from_supabase():
                 "startTimestamp": r.get("start_timestamp", 0),
             }
             if sess["status"] == "active":
-                sess["status"] = "completed"
-                if not sess.get("endTime"):
-                    sess["endTime"] = datetime.now(PHT).strftime("%Y-%m-%d %I:%M %p")
-                _sb_upsert_session(sess)
-            _completed_sessions.append(sess)
+                # Keep at most one active session per driver (latest only).
+                did = sess.get("driverId")
+                if did and did not in active_loaded:
+                    _active_sessions[did] = sess
+                    active_loaded.add(did)
+                else:
+                    _completed_sessions.append(sess)
+            else:
+                _completed_sessions.append(sess)
         _session_counter = max_counter
 
         # Load event stats
@@ -289,6 +304,7 @@ def _process_state(data: dict):
     # Collect items to sync to Supabase after releasing the lock
     sync_driver = None
     sync_alert = None
+    sync_alert_updates: list[tuple[str, str]] = []
     sync_session = None
     sync_session_ends = []
     sync_events = []
@@ -396,15 +412,25 @@ def _process_state(data: dict):
                 _drivers[driver_id]["riskLevel"] = "High" if state == "CRITICAL" else "Medium"
                 sync_driver = dict(_drivers[driver_id])
 
+        # --- Auto-resolve latest active alert when driver returns to normal ---
+        if prev_state_name in ("DROWSY", "CRITICAL") and state == "ALERT" and driver_id and driver_id != "UNKNOWN":
+            for alert in reversed(_alerts):
+                if alert.get("driver") == driver_id and alert.get("status") == "Active":
+                    alert["status"] = "Resolved"
+                    sync_alert_updates.append((alert["id"], "Resolved"))
+                    break
+
     _prev_state = dict(data)
 
     # Sync to Supabase in background thread (non-blocking)
-    if sync_driver or sync_alert or sync_session or sync_session_ends or sync_events:
+    if sync_driver or sync_alert or sync_alert_updates or sync_session or sync_session_ends or sync_events:
         def _do_sync():
             if sync_driver:
                 _sb_upsert_driver(sync_driver)
             if sync_alert:
                 _sb_insert_alert(sync_alert)
+            for alert_id, alert_status in sync_alert_updates:
+                _sb_update_alert_status(alert_id, alert_status)
             if sync_session:
                 _sb_upsert_session(sync_session)
             for ended_sess in sync_session_ends:
@@ -431,6 +457,145 @@ def _session_duration(sess: dict) -> str:
     h = int(elapsed // 3600)
     m = int((elapsed % 3600) // 60)
     return f"{h}h {m}m" if h else f"{m}m"
+
+
+def _parse_session_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %I:%M %p").replace(tzinfo=PHT)
+    except Exception:
+        return None
+
+
+def _parse_alert_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %I:%M:%S %p").replace(tzinfo=PHT)
+    except Exception:
+        return None
+
+
+def _to_session_payload(sess: dict) -> dict:
+    payload = dict(sess)
+    dur_h = _session_hours(sess, datetime.now(PHT))
+    total_minutes = max(0, int(round(dur_h * 60)))
+    h = total_minutes // 60
+    m = total_minutes % 60
+    payload["duration"] = f"{h}h {m}m" if h else f"{m}m"
+    return payload
+
+
+def _session_hours(sess: dict, now: datetime) -> float:
+    if sess.get("status") == "active":
+        start_dt = _parse_session_dt(sess.get("startTime"))
+        if not start_dt:
+            start_ts = sess.get("startTimestamp", 0)
+            if start_ts:
+                try:
+                    start_dt = datetime.fromtimestamp(float(start_ts), tz=PHT)
+                except Exception:
+                    start_dt = None
+        end_dt = now
+    else:
+        # Completed sessions are most reliable from explicit start/end strings.
+        start_dt = _parse_session_dt(sess.get("startTime"))
+        end_dt = _parse_session_dt(sess.get("endTime"))
+        if (not start_dt or not end_dt) and sess.get("startTimestamp"):
+            try:
+                start_dt = datetime.fromtimestamp(float(sess.get("startTimestamp")), tz=PHT)
+            except Exception:
+                start_dt = None
+
+    if not start_dt or not end_dt:
+        return 0.0
+
+    if not end_dt or end_dt < start_dt:
+        return 0.0
+    return max(0.0, (end_dt - start_dt).total_seconds() / 3600)
+
+
+def _is_noise_session(sess: dict, now: datetime) -> bool:
+    if sess.get("status") != "completed":
+        return False
+    if (sess.get("alertCount") or 0) > 0:
+        return False
+    if (sess.get("drowsinessEvents") or 0) > 0:
+        return False
+    return _session_hours(sess, now) < (2 / 60)
+
+
+def _fetch_today_sessions_from_supabase() -> list[dict]:
+    if not _sb:
+        return []
+    try:
+        day_start = datetime.now(PHT).strftime("%Y-%m-%d")
+        rows = (
+            _sb.table("sessions")
+            .select("*")
+            .gte("created_at", day_start)
+            .order("created_at", desc=True)
+            .limit(500)
+            .execute()
+            .data
+        )
+        result: list[dict] = []
+        for r in rows:
+            result.append(
+                {
+                    "id": r["id"],
+                    "driverId": r.get("driver_id", ""),
+                    "driver": r.get("driver", r.get("driver_id", "")),
+                    "busId": r.get("bus_id", "BUS-001"),
+                    "startTime": r.get("start_time"),
+                    "endTime": r.get("end_time"),
+                    "status": r.get("status", "completed"),
+                    "alertCount": r.get("alert_count", 0),
+                    "drowsinessEvents": r.get("drowsiness_events", 0),
+                    "startTimestamp": r.get("start_timestamp", 0),
+                }
+            )
+        return result
+    except Exception as e:
+        _log.warning("Failed to fetch today's sessions from Supabase: %s", e)
+        return []
+
+
+def _fetch_today_alerts_from_supabase() -> list[dict]:
+    if not _sb:
+        return []
+    try:
+        day_start = datetime.now(PHT).strftime("%Y-%m-%d")
+        rows = (
+            _sb.table("alerts")
+            .select("*")
+            .gte("created_at", day_start)
+            .order("created_at", desc=True)
+            .limit(500)
+            .execute()
+            .data
+        )
+        result: list[dict] = []
+        for r in rows:
+            result.append(
+                {
+                    "id": r["id"],
+                    "type": r["type"],
+                    "driver": r["driver"],
+                    "bus": r.get("bus", "BUS-001"),
+                    "timestamp": r["timestamp"],
+                    "status": r.get("status", "Active"),
+                    "severity": r.get("severity", "Medium"),
+                    "ear_value": r.get("ear_value", 0.0),
+                    "alarmType": r.get("alarm_type", "buzzer_oled"),
+                    "sessionId": r.get("session_id", ""),
+                }
+            )
+        return result
+    except Exception as e:
+        _log.warning("Failed to fetch today's alerts from Supabase: %s", e)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +636,7 @@ def dashboard_stats():
                 "time": a["timestamp"],
                 "status": a["status"],
                 "sessionId": a.get("sessionId", ""),
-                "alarmTriggered": True,
+                "alarmTriggered": a.get("status") == "Active" and a.get("alarmType", "none") != "none",
             })
 
         # Detection feed from state file
@@ -507,36 +672,89 @@ def dashboard_stats():
 
 @router.get("/sessions")
 def list_sessions():
+    now = datetime.now(PHT)
+    sb_sessions = _fetch_today_sessions_from_supabase()
+
     with _lock:
-        result = []
-        for s in _active_sessions.values():
-            sess = dict(s)
-            sess["duration"] = _session_duration(sess)
-            result.append(sess)
-        for s in _completed_sessions[-10:]:
-            result.append(s)
-        return result
+        active_sessions = [dict(s) for s in _active_sessions.values()]
+        completed_sessions = [dict(s) for s in _completed_sessions]
+
+    by_id: dict[str, dict] = {}
+    base_sessions = sb_sessions if sb_sessions else completed_sessions
+    for s in base_sessions + active_sessions:
+        sid = s.get("id")
+        if sid:
+            by_id[sid] = s
+
+    sessions = list(by_id.values())
+    sessions = [s for s in sessions if not _is_noise_session(s, now)]
+    sessions.sort(key=lambda s: (s.get("startTime") or "", s.get("id") or ""), reverse=True)
+    return [_to_session_payload(s) for s in sessions]
 
 
 @router.get("/work-hours")
 def list_work_hours():
+    now = datetime.now(PHT)
+    sb_sessions = _fetch_today_sessions_from_supabase()
+    sb_alerts = _fetch_today_alerts_from_supabase()
+
     with _lock:
-        result = []
-        for driver_id, drv in _drivers.items():
-            total_h = 0.0
-            sessions = []
-            for s in list(_active_sessions.values()) + _completed_sessions:
-                if s.get("driverId") == driver_id:
-                    start_ts = s.get("startTimestamp", 0)
-                    dur = (time.time() - start_ts) / 3600 if s.get("status") == "active" else 0
-                    total_h += dur
-                    sessions.append({
-                        "start": s.get("startTime", "").split(" ")[-1] if s.get("startTime") else "",
-                        "end": s.get("endTime", "").split(" ")[-1] if s.get("endTime") else None,
-                        "duration": dur,
-                        "active": s.get("status") == "active",
-                    })
-            result.append({
+        drivers_snapshot = {k: dict(v) for k, v in _drivers.items()}
+        mem_sessions = [dict(s) for s in list(_active_sessions.values()) + _completed_sessions]
+        mem_alerts = [dict(a) for a in _alerts]
+
+    by_id: dict[str, dict] = {}
+    source_sessions = sb_sessions if sb_sessions else mem_sessions
+    for s in source_sessions:
+        sid = s.get("id")
+        if sid:
+            by_id[sid] = s
+    all_sessions = list(by_id.values())
+
+    alert_source = sb_alerts if sb_alerts else mem_alerts
+    alert_times_by_driver: dict[str, list[datetime]] = {}
+    for a in alert_source:
+        driver = a.get("driver")
+        ts = _parse_alert_dt(a.get("timestamp"))
+        if not driver or not ts:
+            continue
+        alert_times_by_driver.setdefault(driver, []).append(ts)
+
+    driver_ids = set(drivers_snapshot.keys())
+    driver_ids.update(s.get("driverId") for s in all_sessions if s.get("driverId"))
+
+    result = []
+    for driver_id in sorted(driver_ids):
+        drv = drivers_snapshot.get(driver_id, {"name": driver_id})
+        total_h = 0.0
+        sessions = []
+        for s in all_sessions:
+            if s.get("driverId") != driver_id:
+                continue
+            if _is_noise_session(s, now):
+                continue
+            dur = _session_hours(s, now)
+            total_h += dur
+            sessions.append(
+                {
+                    "start": s.get("startTime", "").split(" ")[-1] if s.get("startTime") else "",
+                    "end": s.get("endTime", "").split(" ")[-1] if s.get("endTime") else None,
+                    "duration": round(dur, 2),
+                    "active": s.get("status") == "active",
+                }
+            )
+
+        # Fallback: if session durations are missing, estimate from today's fault-log timestamps.
+        if total_h < 0.01:
+            ts_list = sorted(alert_times_by_driver.get(driver_id, []))
+            if len(ts_list) >= 2:
+                inferred = max(0.0, (ts_list[-1] - ts_list[0]).total_seconds() / 3600)
+                total_h = round(inferred, 2)
+            elif len(ts_list) == 1:
+                total_h = 0.08
+
+        result.append(
+            {
                 "driverId": driver_id,
                 "driver": drv.get("name", driver_id),
                 "todayTotal": round(total_h, 2),
@@ -545,8 +763,9 @@ def list_work_hours():
                 "threshold8h": total_h >= 8,
                 "reminderActive": total_h >= 4,
                 "weeklyHours": [0, 0, 0, 0, 0, 0, 0],
-            })
-        return result
+            }
+        )
+    return result
 
 
 @router.get("/drivers")
@@ -604,28 +823,110 @@ def get_driver(driver_id: str):
         if not driver:
             raise HTTPException(status_code=404, detail="Driver not found")
         sessions = [s for s in list(_active_sessions.values()) + _completed_sessions if s.get("driverId") == driver_id]
+        alerts_snapshot = [dict(a) for a in _alerts]
 
-        # Per-driver drowsiness incidents by day of week
-        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        driver_day_counts: dict[int, int] = {i: 0 for i in range(7)}
-        driver_name = driver.get("name", driver_id)
-        for a in _alerts:
-            if a.get("driver") not in (driver_id, driver_name):
-                continue
-            try:
-                dt = datetime.strptime(a["timestamp"], "%Y-%m-%d %H:%M:%S")
-                driver_day_counts[dt.weekday()] += 1
-            except (ValueError, KeyError):
-                pass
-        driver_incidents = [{"day": d, "incidents": driver_day_counts[i]} for i, d in enumerate(day_names)]
+    # Per-driver drowsiness incidents by day of week
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    driver_day_counts: dict[int, int] = {i: 0 for i in range(7)}
+    driver_name = driver.get("name", driver_id)
+    alert_source = _fetch_today_alerts_from_supabase() or alerts_snapshot
+    for a in alert_source:
+        if a.get("driver") not in (driver_id, driver_name):
+            continue
+        dt = _parse_alert_dt(a.get("timestamp"))
+        if not dt:
+            continue
+        driver_day_counts[dt.weekday()] += 1
+    driver_incidents = [{"day": d, "incidents": driver_day_counts[i]} for i, d in enumerate(day_names)]
 
     return {"driver": driver, "sessions": sessions, "workHours": None, "drowsinessIncidents": driver_incidents}
 
 
 @router.get("/alerts")
 def list_alerts():
+    sb_alerts = _fetch_today_alerts_from_supabase()
     with _lock:
-        return list(reversed(_alerts[-50:]))
+        mem_alerts = [dict(a) for a in _alerts]
+
+    by_id: dict[str, dict] = {}
+    source_alerts = sb_alerts if sb_alerts else mem_alerts
+    for a in source_alerts:
+        aid = a.get("id")
+        if aid:
+            by_id[aid] = a
+
+    # Include unsynced in-memory alerts in case they're newer than Supabase write timing.
+    for a in mem_alerts[-20:]:
+        aid = a.get("id")
+        if aid:
+            by_id[aid] = a
+
+    merged = list(by_id.values())
+    merged.sort(key=lambda a: (a.get("timestamp") or "", a.get("id") or ""), reverse=True)
+    return merged
+
+
+@router.put("/alerts/{alert_id}")
+def update_alert_status(alert_id: str, body: dict):
+    new_status = (body.get("status") or "").strip()
+    if new_status not in ("Active", "Resolved"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    with _lock:
+        target = next((a for a in _alerts if a.get("id") == alert_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        target["status"] = new_status
+        updated = dict(target)
+
+    if _sb:
+        try:
+            _sb_update_alert_status(alert_id, new_status)
+        except Exception as e:
+            _log.warning("Supabase alert status update failed for %s: %s", alert_id, e)
+            raise HTTPException(status_code=500, detail="Failed to update alert in database")
+
+    return updated
+
+
+@router.put("/alerts")
+def update_all_alert_status(body: dict):
+    new_status = (body.get("status") or "").strip()
+    if new_status not in ("Active", "Resolved"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    with _lock:
+        for a in _alerts:
+            a["status"] = new_status
+
+    if _sb:
+        try:
+            _sb.table("alerts").update({"status": new_status}).neq("id", "").execute()
+        except Exception as e:
+            _log.warning("Supabase bulk alert status update failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to update alerts in database")
+
+    return {"ok": True, "status": new_status}
+
+
+@router.delete("/alerts/{alert_id}")
+def delete_alert(alert_id: str):
+    with _lock:
+        target = next((a for a in _alerts if a.get("id") == alert_id), None)
+        if not target:
+            raise HTTPException(status_code=404, detail="Alert not found")
+
+    if _sb:
+        try:
+            _sb.table("alerts").delete().eq("id", alert_id).execute()
+        except Exception as e:
+            _log.warning("Supabase delete failed for alert %s: %s", alert_id, e)
+            raise HTTPException(status_code=500, detail="Failed to delete alert from database")
+
+    with _lock:
+        _alerts[:] = [a for a in _alerts if a.get("id") != alert_id]
+
+    return {"ok": True}
 
 
 @router.get("/buses")

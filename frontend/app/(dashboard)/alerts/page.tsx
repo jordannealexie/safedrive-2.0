@@ -19,14 +19,13 @@ import {
     CheckCircle2,
     Eye,
     AlertTriangle,
-    History,
     MoreHorizontal,
     ShieldAlert,
     Clock,
     CheckCircle,
     Volume2,
     Brain,
-    EyeOff
+    Trash2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn, formatTimestamp } from '@/lib/utils';
@@ -277,9 +276,21 @@ export default function AlertsPage() {
                                                     )}
                                                     <DropdownMenuItem onClick={() => {
                                                         const detail = `Alert: ${alert.type}\nDriver: ${alert.driver}\nBus: ${alert.bus}\nSeverity: ${alert.severity}\nSession: ${alert.sessionId}\nAlarm: ${alert.alarmType}\nTime: ${formatTimestamp(alert.timestamp)}\nStatus: ${alert.status}`;
-                                                        alert.status !== undefined && navigator.clipboard.writeText(detail);
+                                                        if (alert.status !== undefined) {
+                                                            navigator.clipboard.writeText(detail);
+                                                        }
                                                     }}>
                                                         <Eye className="w-4 h-4 mr-2" /> Copy Details
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        className="text-brand-red focus:text-brand-red"
+                                                        onClick={async () => {
+                                                            if (!window.confirm('Delete this alert permanently?')) return;
+                                                            await domainApi.deleteAlert(alert.id);
+                                                            setAlerts(prev => prev.filter(a => a.id !== alert.id));
+                                                        }}
+                                                    >
+                                                        <Trash2 className="w-4 h-4 mr-2" /> Delete Alert
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
