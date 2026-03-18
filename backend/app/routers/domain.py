@@ -259,6 +259,12 @@ def _load_from_supabase():
                 _completed_sessions.append(sess)
         _session_counter = max_counter
 
+        # On restart, restored active sessions should not keep accumulating time
+        # unless confirmed by fresh live state updates.
+        now_ts = datetime.now(PHT).timestamp()
+        for did in active_loaded:
+            _missing_since[did] = now_ts - SESSION_GRACE_PERIOD_SECONDS
+
         # Load event stats
         rows = _sb.table("event_stats").select("*").execute().data
         for r in rows:
@@ -345,6 +351,18 @@ def _process_state(data: dict):
 
         for active_driver in list(_active_sessions.keys()):
             if active_driver == current_driver:
+                _missing_since.pop(active_driver, None)
+                continue
+
+            # If another known driver is currently detected, close prior active
+            # sessions immediately. Grace period only applies to unknown/missing
+            # driver windows.
+            if current_driver and active_driver != current_driver:
+                sess = _active_sessions.pop(active_driver)
+                sess["endTime"] = now.strftime("%Y-%m-%d %I:%M %p")
+                sess["status"] = "completed"
+                _completed_sessions.append(sess)
+                sync_session_ends.append(dict(sess))
                 _missing_since.pop(active_driver, None)
                 continue
 
@@ -477,6 +495,20 @@ def _parse_alert_dt(value: str | None) -> datetime | None:
         return None
 
 
+def _format_session_clock(value: str | None) -> str | None:
+    if not value:
+        return None
+    dt = _parse_session_dt(value)
+    if dt:
+        return dt.strftime("%I:%M %p")
+
+    # Keep a best-effort fallback for legacy/unexpected formats.
+    parts = str(value).split(" ")
+    if len(parts) >= 3:
+        return " ".join(parts[-2:])
+    return str(value)
+
+
 def _to_session_payload(sess: dict) -> dict:
     payload = dict(sess)
     dur_h = _session_hours(sess, datetime.now(PHT))
@@ -524,6 +556,18 @@ def _is_noise_session(sess: dict, now: datetime) -> bool:
     if (sess.get("drowsinessEvents") or 0) > 0:
         return False
     return _session_hours(sess, now) < (2 / 60)
+
+
+def _is_today_session(sess: dict, now: datetime) -> bool:
+    start_dt = _parse_session_dt(sess.get("startTime"))
+    if not start_dt and sess.get("startTimestamp"):
+        try:
+            start_dt = datetime.fromtimestamp(float(sess.get("startTimestamp")), tz=PHT)
+        except Exception:
+            start_dt = None
+    if not start_dt:
+        return False
+    return start_dt.date() == now.date()
 
 
 def _fetch_today_sessions_from_supabase() -> list[dict]:
@@ -704,14 +748,18 @@ def list_work_hours():
         mem_alerts = [dict(a) for a in _alerts]
 
     by_id: dict[str, dict] = {}
-    source_sessions = sb_sessions if sb_sessions else mem_sessions
-    for s in source_sessions:
+    for s in sb_sessions + mem_sessions:
         sid = s.get("id")
         if sid:
             by_id[sid] = s
-    all_sessions = list(by_id.values())
+    all_sessions = [s for s in by_id.values() if _is_today_session(s, now)]
 
-    alert_source = sb_alerts if sb_alerts else mem_alerts
+    alert_by_id: dict[str, dict] = {}
+    for a in sb_alerts + mem_alerts:
+        aid = a.get("id")
+        if aid:
+            alert_by_id[aid] = a
+    alert_source = list(alert_by_id.values())
     alert_times_by_driver: dict[str, list[datetime]] = {}
     for a in alert_source:
         driver = a.get("driver")
@@ -728,17 +776,33 @@ def list_work_hours():
         drv = drivers_snapshot.get(driver_id, {"name": driver_id})
         total_h = 0.0
         sessions = []
+        driver_alert_times = sorted(alert_times_by_driver.get(driver_id, []))
+        latest_alert_dt = driver_alert_times[-1] if driver_alert_times else None
         for s in all_sessions:
             if s.get("driverId") != driver_id:
                 continue
             if _is_noise_session(s, now):
                 continue
             dur = _session_hours(s, now)
+            session_end_display = _format_session_clock(s.get("endTime"))
+
+            # If a completed session end time is stretched far beyond observed
+            # alert activity, cap it using the latest alert + session grace.
+            if s.get("status") == "completed" and latest_alert_dt is not None:
+                start_dt = _parse_session_dt(s.get("startTime"))
+                end_dt = _parse_session_dt(s.get("endTime"))
+                if start_dt and end_dt and latest_alert_dt >= start_dt:
+                    inferred_end = latest_alert_dt + timedelta(seconds=SESSION_GRACE_PERIOD_SECONDS)
+                    if inferred_end < end_dt:
+                        dur = max(0.0, (inferred_end - start_dt).total_seconds() / 3600)
+                        session_end_display = inferred_end.strftime("%I:%M %p")
+
             total_h += dur
             sessions.append(
                 {
-                    "start": s.get("startTime", "").split(" ")[-1] if s.get("startTime") else "",
-                    "end": s.get("endTime", "").split(" ")[-1] if s.get("endTime") else None,
+                    "id": s.get("id", ""),
+                    "start": _format_session_clock(s.get("startTime")) or "",
+                    "end": session_end_display,
                     "duration": round(dur, 2),
                     "active": s.get("status") == "active",
                 }

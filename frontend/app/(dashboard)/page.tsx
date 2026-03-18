@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
     BarChart,
     Bar,
@@ -64,20 +64,25 @@ export default function DashboardPage() {
     const [showAnalysis, setShowAnalysis] = useState(false);
     const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | 'all'>('all');
     const [analysisStats, setAnalysisStats] = useState<{ totalAlerts: number; highSeverity: number; resolvedRate: number; avgPerDay: number } | null>(null);
-    useEffect(() => {
-        const load = async () => {
-            const [dash, sess, wh] = await Promise.all([
-                domainApi.getDashboard().catch(() => null),
-                domainApi.getSessions().catch(() => []),
-                domainApi.getWorkHours().catch(() => []),
-            ]);
-            if (dash) setDashboard(dash);
-            setSessions(sess);
-            setWorkHours(wh);
-            setIsLoading(false);
-        };
-        load();
+    const loadDomainData = useCallback(async () => {
+        const [dash, sess, wh] = await Promise.all([
+            domainApi.getDashboard().catch(() => null),
+            domainApi.getSessions().catch(() => []),
+            domainApi.getWorkHours().catch(() => []),
+        ]);
+        if (dash) setDashboard(dash);
+        setSessions(sess);
+        setWorkHours(wh);
+        setIsLoading(false);
     }, []);
+
+    useEffect(() => {
+        loadDomainData();
+        const timer = setInterval(() => {
+            loadDomainData();
+        }, 10000);
+        return () => clearInterval(timer);
+    }, [loadDomainData]);
 
     useEffect(() => {
         if (!showAnalysis) return;
@@ -404,7 +409,10 @@ export default function DashboardPage() {
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
                             {workHours.map((wh, i) => {
-                                const session = sessions.find(s => s.driverId === wh.driverId && s.status === 'active');
+                                const activeWorkSession = wh.sessions.find(s => s.active);
+                                const session = activeWorkSession?.id
+                                    ? sessions.find(s => s.id === activeWorkSession.id)
+                                    : sessions.find(s => s.driverId === wh.driverId && s.status === 'active');
                                 const percentage = Math.min((wh.todayTotal / 8) * 100, 100);
                                 return (
                                     <motion.div
@@ -422,7 +430,9 @@ export default function DashboardPage() {
                                                 <div>
                                                     <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{wh.driver}</p>
                                                     {session && (
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{session.id} • {session.duration}</p>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                                            {session.id} • {activeWorkSession?.start ? `START ${activeWorkSession.start} • ` : ''}{session.duration}
+                                                        </p>
                                                     )}
                                                 </div>
                                             </div>

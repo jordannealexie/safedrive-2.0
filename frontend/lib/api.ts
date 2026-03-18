@@ -388,6 +388,7 @@ export interface DriverSession {
 }
 
 export interface WorkHourSession {
+    id?: string;
     start: string;
     end: string | null;
     duration: number;
