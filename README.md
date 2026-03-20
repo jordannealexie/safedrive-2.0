@@ -1,6 +1,29 @@
-# SafeDrive 2.0
+<h1 align="center">SafeDrive 2.0</h1>
 
-AI-powered driver drowsiness detection and accident prevention system. Combines computer vision, hardware sensors, and a real-time web dashboard to monitor driver fatigue and trigger alerts when drowsiness is detected while the vehicle is in motion.
+<p align="center">
+  <b>AI-Powered Driver Drowsiness Detection & Accident Prevention System</b>
+</p>
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=nextjs,react,ts,python,fastapi,postgres,supabase,raspberrypi,opencv,nodejs,git,github,vscode" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Architecture-IoT%20%7C%20AI%20%7C%20Fullstack-purple?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Realtime-WebSockets-success?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Edge-Computing-blue?style=for-the-badge"/>
+</p>
+
+---
+
+## Overview
+
+**SafeDrive 2.0** is an intelligent driver monitoring system that detects drowsiness in real-time using computer vision and embedded hardware sensors.  
+It combines **edge AI processing on Raspberry Pi**, **real-time backend streaming**, and a **modern monitoring dashboard** to prevent fatigue-related road accidents.
+
+The platform enables live driver monitoring, automated alert triggering, fleet analytics, and system health visibility through a scalable IoT-driven architecture.
+
+---
 
 ## Architecture
 
@@ -18,91 +41,73 @@ AI-powered driver drowsiness detection and accident prevention system. Combines 
     └──────────┘          └────────────┘
 ```
 
-| Layer | Tech | Description |
-|-------|------|-------------|
-| **Frontend** | Next.js 16, React 19, TypeScript | Admin dashboard with live monitoring, alerts, driver profiles, reports |
-| **Backend** | FastAPI, Python 3.11+ | REST API + WebSocket for sensor data, driver/alert management |
-| **Detection** | safedrive_ai (separate service) | Facial landmark analysis for drowsiness detection |
-| **Database** | Supabase (PostgreSQL) | Cloud persistence with offline localStorage fallback |
-| **Hardware** | Raspberry Pi 4B | GPS, accelerometer, buzzer, OLED, camera |
+
+---
 
 ## Key Features
 
-- **Real-time drowsiness detection** via facial landmark analysis (EAR-based)
-- **Motion-aware alarm suppression** — buzzer only sounds when vehicle is moving (accel > 1.2g)
-- **Session-based baseline learning** — each driving session builds unique behavior profile
-- **Live dashboard** — WebSocket-powered real-time monitoring at 1 Hz
-- **Driver management** — face auto-registration, session tracking, work hour compliance
-- **Alert system** — severity levels, audit trail, CSV export
-- **System status** — device health, core infrastructure monitoring, OLED live preview
-- **Offline-first** — localStorage caching, Supabase fallback when Pi is unreachable
+- **Real-time drowsiness detection** using facial landmark analysis (EAR-based)  
+- **Motion-aware alarm system** — buzzer activates only when vehicle movement is detected  
+- **Live monitoring dashboard** powered by WebSockets (1 Hz sensor stream)  
+- **Driver lifecycle management** — auto face registration, session tracking, work hour compliance  
+- **Alert audit system** — severity classification with CSV export support  
+- **Infrastructure visibility** — device health monitoring and OLED live preview  
+- **Offline-first resilience** — localStorage caching with Supabase cloud synchronization  
+- **Embedded IoT integration** — sensor fusion pipeline running on Raspberry Pi  
+
+---
+
+## Technology Stack
+
+| Layer | Technologies |
+|------|--------------|
+| **Frontend** | Next.js 16 • React 19 • TypeScript • Zustand |
+| **Backend** | FastAPI • Python 3.11+ • Uvicorn • WebSockets |
+| **AI Detection** | OpenCV • Facial Landmark Processing • safedrive_ai Service |
+| **Database** | Supabase • PostgreSQL |
+| **IoT Hardware** | Raspberry Pi 4B • MPU-6050 • NEO-6M • OLED SSD1306 • Buzzer • USB Camera |
+| **Dev Tools** | Git • GitHub • VS Code • Tailscale |
+
+---
 
 ## Prerequisites
 
-- **Raspberry Pi 4B** with Raspbian/Debian
-- **Python 3.11+**
-- **Node.js 18+**
-- **Tailscale** (for remote access)
-- **Supabase** project (for cloud persistence)
+- Raspberry Pi 4B (Raspberry Pi OS / Debian)
+- Python 3.11+
+- Node.js 18+
+- Supabase Project
+- Tailscale (Remote Access Networking)
 
-### Hardware
+---
 
-| Component | Model | Connection |
-|-----------|-------|------------|
-| Camera | USB webcam | USB |
-| GPS | NEO-6M | Serial (`/dev/ttyAMA0`, 9600 baud) |
-| Accelerometer | MPU-6050 | I2C (address `0x68`, bus 1) |
-| Buzzer | Active buzzer | GPIO pin 17 |
+## Hardware Connections
+
+| Component | Model | Interface |
+|-----------|------|-----------|
+| Camera | USB Webcam | USB |
+| GPS | NEO-6M | Serial `/dev/ttyAMA0` |
+| Accelerometer | MPU-6050 | I2C Bus 1 (`0x68`) |
+| Buzzer | Active Buzzer | GPIO 17 |
 | Display | SSD1306 OLED | SPI |
 
-## Setup
+---
+
+## Setup Guide
 
 ### Backend (Raspberry Pi)
 
 ```bash
-# SSH into the Pi
 ssh raspi4b@<PI_IP>
 
-# Create project directory
 mkdir -p /home/raspi4b/SafeDrive/backend
 
-# Create virtual environment
 python3 -m venv /home/raspi4b/SafeDrive/venv
 source /home/raspi4b/SafeDrive/venv/bin/activate
 
-# Install dependencies
 cd /home/raspi4b/SafeDrive/backend
 pip install -r requirements.txt
 
-# Start the server
 uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-Or use the deploy script from your development machine:
-
-```bash
-python deploy_to_pi.py
-```
-
-### Frontend (Development Machine)
-
-```bash
-cd frontend
-npm install
-```
-
-Create `frontend/.env.local`:
-
-```env
-NEXT_PUBLIC_API_URL=http://<PI_TAILSCALE_IP>:8000
-NEXT_PUBLIC_WS_URL=ws://<PI_TAILSCALE_IP>:8000
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
-
-```bash
-npm run dev
-```
 
 ### Database (Supabase)
 
@@ -208,3 +213,6 @@ SafeDrive 2.0/
 | `start_pi_tailscale.py` | Start server via Tailscale SSH |
 | `check_sensors.py` | Diagnostic: test sensor connections |
 | `scan_i2c.py` | Scan I2C bus for connected devices |
+
+## Author
+Jordanne Alexie M. Bartolome
