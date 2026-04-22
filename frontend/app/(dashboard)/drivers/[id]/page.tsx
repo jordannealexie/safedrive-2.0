@@ -52,14 +52,27 @@ export default function DriverProfilePage() {
     const [notesModalOpen, setNotesModalOpen] = useState(false);
     const [chartRange, setChartRange] = useState<'week' | 'month'>('week');
     const { dateFilterStart, dateFilterEnd } = useUIStore();
+    const [snapshots, setSnapshots] = useState<Array<{
+        id: string;
+        driverId: string;
+        sessionId: string;
+        capturedAt: string;
+        imageUrl: string;
+        status?: string;
+        source?: string;
+    }>>([]);
+    const [snapshotsLoading, setSnapshotsLoading] = useState(true);
 
     useEffect(() => {
         const load = async () => {
             try {
-                const [detail, allAlerts, notes] = await Promise.all([
+                const [detail, allAlerts, notes, snapshotRows] = await Promise.all([
                     domainApi.getDriver(driverId),
                     domainApi.getAlerts().catch(() => []),
                     domainApi.getDriverNotes(driverId).catch(() => ''),
+                    fetch(`/api/drivers/${encodeURIComponent(driverId)}/snapshots`)
+                        .then(async (r) => (r.ok ? r.json() : []))
+                        .catch(() => []),
                 ]);
                 setDriver(detail.driver);
                 setDriverSessions(detail.sessions);
@@ -67,10 +80,12 @@ export default function DriverProfilePage() {
                 setDrowsinessIncidents(detail.drowsinessIncidents ?? []);
                 setAlerts(allAlerts.filter((a: any) => a.driver === driverId || a.driver === detail.driver.name));
                 setAdminNotes(notes);
+                setSnapshots(Array.isArray(snapshotRows) ? snapshotRows : []);
             } catch (e) {
                 console.error(e);
             } finally {
                 setIsLoading(false);
+                setSnapshotsLoading(false);
             }
         };
         load();
@@ -331,6 +346,53 @@ export default function DriverProfilePage() {
                                     </div>
                                 ))}
                             </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-xl dark:text-white">Prototype Snapshots</CardTitle>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{snapshots.length} Frames</span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Driver-linked captures from the vehicle prototype. Realtime Pi feed can be attached later.</p>
+                        </CardHeader>
+                        <CardContent>
+                            {snapshotsLoading ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {Array(2).fill(0).map((_, i) => (
+                                        <div key={i} className="rounded-2xl border border-slate-100 dark:border-slate-800 p-3">
+                                            <div className="h-40 w-full rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse" />
+                                            <div className="mt-3 h-3 w-2/3 bg-slate-100 dark:bg-slate-800 animate-pulse rounded" />
+                                            <div className="mt-2 h-3 w-1/3 bg-slate-100 dark:bg-slate-800 animate-pulse rounded" />
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : snapshots.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 p-8 text-center">
+                                    <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No prototype snapshots yet for this driver</p>
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">Waiting for Pi snapshot uploads. UI is ready for realtime integration.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {snapshots.map((shot) => (
+                                        <div key={shot.id} className="rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-800/30">
+                                            <div className="aspect-video bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                                <img
+                                                    src={shot.imageUrl}
+                                                    alt={`Snapshot ${shot.id}`}
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            </div>
+                                            <div className="p-3 space-y-1">
+                                                <p className="text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest">{shot.sessionId || 'No Session ID'}</p>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400">{formatTimestamp(shot.capturedAt)}</p>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{shot.source || 'Pi Prototype'} {shot.status ? `• ${shot.status}` : ''}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
