@@ -1,8 +1,8 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import { domainApi, type Driver, type DriverSession, type WorkHours, type IncidentPoint, type AlertRecord } from '@/lib/api';
+import { useState, useEffect, useMemo } from 'react';
+import { domainApi, type Driver, type DriverSession, type WorkHours, type AlertRecord } from '@/lib/api';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,7 +32,7 @@ import {
     ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { cn, formatTimestamp, getDateRangeLabel, isWithinDateRange } from '@/lib/utils';
+import { buildIncidentSeries, cn, formatTimestamp, getDateRangeLabel, isWithinDateRange } from '@/lib/utils';
 import { useUIStore } from '@/store/useUIStore';
 
 export default function DriverProfilePage() {
@@ -43,14 +43,12 @@ export default function DriverProfilePage() {
     const [driver, setDriver] = useState<Driver | null>(null);
     const [driverSessions, setDriverSessions] = useState<DriverSession[]>([]);
     const [workHours, setWorkHours] = useState<WorkHours | null>(null);
-    const [drowsinessIncidents, setDrowsinessIncidents] = useState<IncidentPoint[]>([]);
     const [alerts, setAlerts] = useState<AlertRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [adminNotes, setAdminNotes] = useState('');
     const [notesSaving, setNotesSaving] = useState(false);
     const [notesSaved, setNotesSaved] = useState(false);
     const [notesModalOpen, setNotesModalOpen] = useState(false);
-    const [chartRange, setChartRange] = useState<'week' | 'month'>('week');
     const { dateFilterStart, dateFilterEnd } = useUIStore();
     const [snapshots, setSnapshots] = useState<Array<{
         id: string;
@@ -77,7 +75,6 @@ export default function DriverProfilePage() {
                 setDriver(detail.driver);
                 setDriverSessions(detail.sessions);
                 setWorkHours(detail.workHours);
-                setDrowsinessIncidents(detail.drowsinessIncidents ?? []);
                 setAlerts(allAlerts.filter((a: any) => a.driver === driverId || a.driver === detail.driver.name));
                 setAdminNotes(notes);
                 setSnapshots(Array.isArray(snapshotRows) ? snapshotRows : []);
@@ -96,21 +93,10 @@ export default function DriverProfilePage() {
 
     const activeSession = scopedSessions.find(s => s.status === 'active');
 
-    const monthlyData: IncidentPoint[] = (() => {
-        const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-        const now = Date.now();
-        return weeks.map((label, i) => {
-            const weekStart = now - (3 - i) * 7 * 24 * 60 * 60 * 1000;
-            const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
-            const count = scopedAlerts.filter(a => {
-                const t = new Date(a.timestamp).getTime();
-                return t >= weekStart && t < weekEnd;
-            }).length;
-            return { day: label, incidents: count };
-        });
-    })();
-
-    const chartData = chartRange === 'week' ? drowsinessIncidents : monthlyData;
+    const chartData = useMemo(
+        () => buildIncidentSeries(scopedAlerts.map((a) => a.timestamp), dateFilterStart, dateFilterEnd).map((p) => ({ day: p.label, incidents: p.incidents })),
+        [scopedAlerts, dateFilterStart, dateFilterEnd]
+    );
 
     if (isLoading || !driver) {
         return (
@@ -263,11 +249,7 @@ export default function DriverProfilePage() {
                         <CardHeader className="flex flex-row items-center justify-between">
                             <div>
                                 <CardTitle className="text-xl dark:text-white">Drowsiness History</CardTitle>
-                                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">{chartRange === 'week' ? '7-day activity trend' : '4-week activity trend'}</p>
-                            </div>
-                            <div className="flex gap-2">
-                                <Button variant="ghost" size="sm" onClick={() => setChartRange('week')} className={cn("font-bold", chartRange === 'week' ? "dark:text-white" : "text-slate-400 dark:text-slate-500")}>Week</Button>
-                                <Button variant="ghost" size="sm" onClick={() => setChartRange('month')} className={cn("font-bold", chartRange === 'month' ? "dark:text-white" : "text-slate-400 dark:text-slate-500")}>Month</Button>
+                                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Adaptive timeline based on selected date range</p>
                             </div>
                         </CardHeader>
                         <CardContent>

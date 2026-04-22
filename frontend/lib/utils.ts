@@ -92,3 +92,97 @@ export function getDateRangeLabel(startYmd: string | null, endYmd: string | null
   if (startYmd) return `From ${startYmd}`;
   return `Until ${endYmd}`;
 }
+
+export interface IncidentSeriesPoint {
+  label: string;
+  incidents: number;
+}
+
+function startOfDay(d: Date): Date {
+  const next = new Date(d);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(d: Date): Date {
+  const next = new Date(d);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
+function addDays(d: Date, days: number): Date {
+  const next = new Date(d);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMonths(d: Date, months: number): Date {
+  const next = new Date(d);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function formatBucketLabel(d: Date, mode: 'day' | 'week' | 'month'): string {
+  if (mode === 'day') {
+    return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+  }
+  if (mode === 'week') {
+    return `Wk ${d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`;
+  }
+  return d.toLocaleDateString('en-PH', { month: 'short', year: 'numeric' });
+}
+
+export function buildIncidentSeries(
+  timestamps: Array<string | undefined | null>,
+  startYmd: string | null,
+  endYmd: string | null,
+): IncidentSeriesPoint[] {
+  const parsed = timestamps
+    .map((ts) => parseAppTimestamp(ts))
+    .filter((d): d is Date => Boolean(d))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  if (parsed.length === 0) return [];
+
+  const derivedStart = startOfDay(parsed[0]);
+  const derivedEnd = endOfDay(parsed[parsed.length - 1]);
+  const rangeStart = startYmd ? startOfDay(new Date(`${startYmd}T00:00:00`)) : derivedStart;
+  const rangeEnd = endYmd ? endOfDay(new Date(`${endYmd}T23:59:59.999`)) : derivedEnd;
+
+  if (rangeEnd < rangeStart) return [];
+
+  const totalDays = Math.max(1, Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / 86400000) + 1);
+  const mode: 'day' | 'week' | 'month' = totalDays <= 31 ? 'day' : totalDays <= 180 ? 'week' : 'month';
+
+  const buckets: Array<{ start: Date; end: Date; label: string; incidents: number }> = [];
+  let cursor = new Date(rangeStart);
+
+  while (cursor <= rangeEnd) {
+    let nextCursor: Date;
+    if (mode === 'day') {
+      nextCursor = addDays(cursor, 1);
+    } else if (mode === 'week') {
+      nextCursor = addDays(cursor, 7);
+    } else {
+      nextCursor = addMonths(cursor, 1);
+      nextCursor.setDate(1);
+    }
+
+    const bucketEnd = new Date(Math.min(rangeEnd.getTime(), nextCursor.getTime() - 1));
+    buckets.push({
+      start: new Date(cursor),
+      end: bucketEnd,
+      label: formatBucketLabel(cursor, mode),
+      incidents: 0,
+    });
+    cursor = nextCursor;
+  }
+
+  parsed.forEach((d) => {
+    if (d < rangeStart || d > rangeEnd) return;
+    const bucket = buckets.find((b) => d >= b.start && d <= b.end);
+    if (bucket) bucket.incidents += 1;
+  });
+
+  return buckets.map((b) => ({ label: b.label, incidents: b.incidents }));
+}

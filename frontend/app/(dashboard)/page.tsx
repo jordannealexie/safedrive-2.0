@@ -25,7 +25,7 @@ import { StatusBadge } from './components/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { supabase } from '@/lib/supabase';
-import { cn, formatTimestamp, getDateRangeLabel, isWithinDateRange, parseAppTimestamp } from '@/lib/utils';
+import { buildIncidentSeries, cn, formatTimestamp, getDateRangeLabel, isWithinDateRange, parseAppTimestamp } from '@/lib/utils';
 
 import { motion } from 'framer-motion';
 
@@ -114,14 +114,16 @@ export default function DashboardPage() {
     const scopedDashboard = useMemo(() => {
         if (!dashboard) return null;
 
-        const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+        const incidentSeries = buildIncidentSeries(
+            scopedAlerts.map((a) => a.timestamp),
+            dateFilterStart,
+            dateFilterEnd
+        );
         const peakBuckets: Record<number, number> = { 0: 0, 4: 0, 8: 0, 12: 0, 16: 0, 20: 0 };
 
         scopedAlerts.forEach((a) => {
             const dt = parseAppTimestamp(a.timestamp);
             if (!dt) return;
-            dayCounts[(dt.getDay() + 6) % 7] += 1;
             const bucket = Math.min(20, Math.floor(dt.getHours() / 4) * 4);
             peakBuckets[bucket] += 1;
         });
@@ -137,7 +139,7 @@ export default function DashboardPage() {
                 if (s.label.toLowerCase().includes('active session')) return { ...s, value: String(activeCount) };
                 return s;
             }),
-            drowsinessIncidents: dayLabels.map((day, i) => ({ day, incidents: dayCounts[i] })),
+            drowsinessIncidents: incidentSeries.map((p) => ({ day: p.label, incidents: p.incidents })),
             peakHours: [0, 4, 8, 12, 16, 20].map((h) => ({ hour: `${String(h).padStart(2, '0')}:00`, incidents: peakBuckets[h] || 0 })),
             recentAlerts: scopedAlerts.slice(0, 5).map((a) => ({
                 id: a.id,
@@ -149,7 +151,7 @@ export default function DashboardPage() {
                 alarmTriggered: a.status === 'Active' && a.alarmType !== 'none',
             })),
         };
-    }, [dashboard, scopedAlerts, scopedSessions]);
+    }, [dashboard, scopedAlerts, scopedSessions, dateFilterStart, dateFilterEnd]);
 
     useEffect(() => {
         loadDomainData();
@@ -261,7 +263,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <ChartCard
                     title="Drowsiness Incidents"
-                    description="Weekly trend of detected drowsiness events"
+                    description="Adaptive trend by selected date range (daily, weekly, or monthly)"
                     isLoading={isLoading}
                     delay={0.2}
                 >
