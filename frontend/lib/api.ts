@@ -575,6 +575,26 @@ function mapSessionRow(r: Record<string, unknown>): DriverSession {
     };
 }
 
+function parseDurationToHours(duration: string | null | undefined): number {
+    if (!duration) return 0;
+    const hourMatch = duration.match(/(\d+)h/i);
+    const minuteMatch = duration.match(/(\d+)m/i);
+    const h = hourMatch ? parseInt(hourMatch[1], 10) : 0;
+    const m = minuteMatch ? parseInt(minuteMatch[1], 10) : 0;
+    return h + m / 60;
+}
+
+function sessionHours(session: DriverSession): number {
+    const fromDuration = parseDurationToHours(session.duration);
+    if (fromDuration > 0) return fromDuration;
+
+    const start = parseAlertTimestamp(session.startTime);
+    if (!start) return 0;
+    const end = session.endTime ? parseAlertTimestamp(session.endTime) : new Date();
+    if (!end || end < start) return 0;
+    return (end.getTime() - start.getTime()) / 3600000;
+}
+
 async function supabaseFallback<T>(table: string, mapper: (r: Record<string, unknown>) => unknown, orderCol = 'created_at'): Promise<T> {
     const { data, error } = await supabase
         .from(table)
@@ -623,8 +643,8 @@ export const domainApi = {
             return {
                 stats: [
                     { label: 'Registered Drivers', value: String(drivers.length), trend: '', icon: 'Users' },
-                    { label: 'Drowsy Today', value: String(visibleAlerts.length), trend: '', icon: 'UserX', color: 'text-brand-red' },
-                    { label: 'Alerts Today', value: String(visibleAlerts.length), trend: '', icon: 'AlertTriangle' },
+                    { label: 'Drowsy Events', value: String(visibleAlerts.length), trend: '', icon: 'UserX', color: 'text-brand-red' },
+                    { label: 'Alerts Logged', value: String(visibleAlerts.length), trend: '', icon: 'AlertTriangle' },
                     { label: 'Active Sessions', value: '0', trend: '', icon: 'Cpu' },
                 ],
                 drowsinessIncidents: buildIncidentsByDay(visibleAlerts),
@@ -686,10 +706,66 @@ export const domainApi = {
         }
     },
     getSessions: async (): Promise<DriverSession[]> => {
-        try { return await cachedFetch<DriverSession[]>('/api/sessions'); }
-        catch { return supabaseFallback<DriverSession[]>('sessions', mapSessionRow); }
+        const cacheKey = 'safedrive_cache_domain_sessions';
+        const cached = getCachedValue<DriverSession[]>(cacheKey);
+        if (cached !== null) return cached;
+
+        const fromSupabase = await dedupedRequest<DriverSession[]>('request_domain_sessions_supabase', async () => {
+            const { data, error } = await supabase
+                .from('sessions')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(500);
+            if (error) throw error;
+            return (data || []).map(mapSessionRow);
+        }).catch(() => null);
+
+        if (fromSupabase && fromSupabase.length > 0) {
+            setCachedValue(cacheKey, fromSupabase, DEFAULT_CACHE_TTL_MS);
+            return fromSupabase;
+        }
+
+        const fallback = await cachedFetch<DriverSession[]>('/api/sessions');
+        setCachedValue(cacheKey, fallback, DEFAULT_CACHE_TTL_MS);
+        return fallback;
     },
-    getWorkHours: () => cachedFetch<WorkHours[]>('/api/work-hours'),
+    getWorkHours: async (): Promise<WorkHours[]> => {
+        const [drivers, sessions] = await Promise.all([
+            domainApi.getDrivers().catch(() => [] as Driver[]),
+            domainApi.getSessions().catch(() => [] as DriverSession[]),
+        ]);
+
+        const sessionsByDriver = new Map<string, DriverSession[]>();
+        sessions.forEach((s) => {
+            const key = s.driverId || s.driver;
+            if (!key) return;
+            const list = sessionsByDriver.get(key) ?? [];
+            list.push(s);
+            sessionsByDriver.set(key, list);
+        });
+
+        return drivers.map((driver) => {
+            const ds = sessionsByDriver.get(driver.id) ?? [];
+            const total = ds.reduce((acc, s) => acc + sessionHours(s), 0);
+
+            return {
+                driverId: driver.id,
+                driver: driver.name,
+                todayTotal: Number(total.toFixed(2)),
+                sessions: ds.map((s) => ({
+                    id: s.id,
+                    start: s.startTime,
+                    end: s.endTime,
+                    duration: Number(sessionHours(s).toFixed(2)),
+                    active: s.status === 'active',
+                })),
+                threshold4h: total >= 4,
+                threshold8h: total >= 8,
+                reminderActive: total >= 4,
+                weeklyHours: [0, 0, 0, 0, 0, 0, 0],
+            };
+        });
+    },
     getAlerts: async (): Promise<AlertRecord[]> => {
         const alertsCacheKey = 'safedrive_cache_domain_alerts';
         const cached = getCachedValue<AlertRecord[]>(alertsCacheKey);

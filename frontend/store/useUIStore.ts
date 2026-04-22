@@ -14,6 +14,13 @@ interface UIState {
     // Theme State
     theme: 'light' | 'dark';
     toggleTheme: () => void;
+
+    // Global Date Filter
+    dateFilterPreset: 'all' | 'today' | '7d' | '30d' | 'custom';
+    dateFilterStart: string | null;
+    dateFilterEnd: string | null;
+    setDateFilterPreset: (preset: 'all' | 'today' | '7d' | '30d' | 'custom') => void;
+    setDateFilterRange: (start: string | null, end: string | null) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -33,6 +40,13 @@ export const useUIStore = create<UIState>()(
             toggleTheme: () => set((state) => ({
                 theme: state.theme === 'light' ? 'dark' : 'light'
             })),
+
+            // Global Date Filter
+            dateFilterPreset: 'all',
+            dateFilterStart: null,
+            dateFilterEnd: null,
+            setDateFilterPreset: (preset) => set({ dateFilterPreset: preset }),
+            setDateFilterRange: (start, end) => set({ dateFilterStart: start, dateFilterEnd: end }),
         }),
         {
             name: 'safedrive-ui-store',
@@ -40,6 +54,9 @@ export const useUIStore = create<UIState>()(
                 isAuthenticated: state.isAuthenticated,
                 theme: state.theme,
                 isSidebarOpen: state.isSidebarOpen,
+                dateFilterPreset: state.dateFilterPreset,
+                dateFilterStart: state.dateFilterStart,
+                dateFilterEnd: state.dateFilterEnd,
             }),
         }
     )

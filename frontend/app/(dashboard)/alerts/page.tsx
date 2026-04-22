@@ -28,7 +28,8 @@ import {
     Trash2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { cn, formatTimestamp } from '@/lib/utils';
+import { cn, formatTimestamp, getDateRangeLabel, isWithinDateRange } from '@/lib/utils';
+import { useUIStore } from '@/store/useUIStore';
 
 export default function AlertsPage() {
     const [isLoading, setIsLoading] = useState(true);
@@ -36,6 +37,7 @@ export default function AlertsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [severityFilter, setSeverityFilter] = useState<string | null>(null);
     const [showFilters, setShowFilters] = useState(false);
+    const { dateFilterStart, dateFilterEnd } = useUIStore();
 
     useEffect(() => {
         domainApi.getAlerts()
@@ -50,6 +52,7 @@ export default function AlertsPage() {
             if (!a.type.toLowerCase().includes(q) && !a.driver.toLowerCase().includes(q) && !a.sessionId.toLowerCase().includes(q)) return false;
         }
         if (severityFilter && a.severity !== severityFilter) return false;
+        if (!isWithinDateRange(a.timestamp, dateFilterStart, dateFilterEnd)) return false;
         return true;
     });
 
@@ -103,6 +106,7 @@ export default function AlertsPage() {
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Security Protocol Log</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-medium">Historical trace of all drowsiness events, baseline deviations, and session alerts.</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mt-2">Range: {getDateRangeLabel(dateFilterStart, dateFilterEnd)}</p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={exportLedger} className="gap-2 border-slate-200 dark:border-slate-800 dark:text-slate-300">

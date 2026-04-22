@@ -32,7 +32,8 @@ import {
     ResponsiveContainer
 } from 'recharts';
 import { motion } from 'framer-motion';
-import { cn, formatTimestamp } from '@/lib/utils';
+import { cn, formatTimestamp, getDateRangeLabel, isWithinDateRange } from '@/lib/utils';
+import { useUIStore } from '@/store/useUIStore';
 
 export default function DriverProfilePage() {
     const params = useParams();
@@ -50,6 +51,7 @@ export default function DriverProfilePage() {
     const [notesSaved, setNotesSaved] = useState(false);
     const [notesModalOpen, setNotesModalOpen] = useState(false);
     const [chartRange, setChartRange] = useState<'week' | 'month'>('week');
+    const { dateFilterStart, dateFilterEnd } = useUIStore();
 
     useEffect(() => {
         const load = async () => {
@@ -74,7 +76,10 @@ export default function DriverProfilePage() {
         load();
     }, [driverId]);
 
-    const activeSession = driverSessions.find(s => s.status === 'active');
+    const scopedAlerts = alerts.filter((a) => isWithinDateRange(a.timestamp, dateFilterStart, dateFilterEnd));
+    const scopedSessions = driverSessions.filter((s) => isWithinDateRange(s.startTime, dateFilterStart, dateFilterEnd));
+
+    const activeSession = scopedSessions.find(s => s.status === 'active');
 
     const monthlyData: IncidentPoint[] = (() => {
         const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
@@ -82,7 +87,7 @@ export default function DriverProfilePage() {
         return weeks.map((label, i) => {
             const weekStart = now - (3 - i) * 7 * 24 * 60 * 60 * 1000;
             const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000;
-            const count = alerts.filter(a => {
+            const count = scopedAlerts.filter(a => {
                 const t = new Date(a.timestamp).getTime();
                 return t >= weekStart && t < weekEnd;
             }).length;
@@ -151,7 +156,7 @@ export default function DriverProfilePage() {
                                 </div>
                                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-center">
                                     <p className="text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider mb-1">Alerts</p>
-                                    <p className="font-extrabold text-lg text-slate-800 dark:text-white">{alerts.length}</p>
+                                    <p className="font-extrabold text-lg text-slate-800 dark:text-white">{scopedAlerts.length}</p>
                                 </div>
                             </div>
 
@@ -207,18 +212,18 @@ export default function DriverProfilePage() {
                                     `Detection: ${driver.detectionStatus}`,
                                     `Baseline: ${driver.baselineStatus} (${driver.baselineConfidence}%)`,
                                     `Total Sessions: ${driver.totalSessions}`,
-                                    `Today Work Hours: ${driver.todayWorkHours}h`,
+                                    `Range Work Hours: ${driver.todayWorkHours}h`,
                                     `Registered: ${driver.faceRegisteredAt}`,
                                     '',
                                     'SESSIONS',
                                     'ID,Bus,Status,Duration,Alerts,Drowsiness Events,Start',
-                                    ...driverSessions.map(s =>
+                                    ...scopedSessions.map(s =>
                                         `${s.id},${s.busId},${s.status},${s.duration},${s.alertCount},${s.drowsinessEvents},${s.startTime}`
                                     ),
                                     '',
                                     'ALERTS',
                                     'ID,Type,Severity,Status,Timestamp',
-                                    ...alerts.map(a =>
+                                    ...scopedAlerts.map(a =>
                                         `${a.id},${a.type},${a.severity},${a.status},${a.timestamp}`
                                     ),
                                 ];
@@ -292,12 +297,13 @@ export default function DriverProfilePage() {
                         <CardHeader>
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-xl dark:text-white">Session History</CardTitle>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{driverSessions.length} Sessions</span>
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{scopedSessions.length} Sessions</span>
                             </div>
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400 mt-1">Range: {getDateRangeLabel(dateFilterStart, dateFilterEnd)}</p>
                         </CardHeader>
                         <CardContent className="p-0">
                             <div className="divide-y dark:divide-slate-800">
-                                {driverSessions.map((session) => (
+                                {scopedSessions.map((session) => (
                                     <div key={session.id} className="flex items-center justify-between p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <div className="flex items-start gap-4">
                                             <div className={`p-3 rounded-xl ${session.status === 'active' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-slate-100 dark:bg-slate-800'}`}>

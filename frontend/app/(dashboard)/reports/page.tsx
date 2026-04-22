@@ -14,9 +14,10 @@ import {
     Activity,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { cn, formatTimestamp } from '@/lib/utils';
+import { cn, formatTimestamp, getDateRangeLabel, isWithinDateRange } from '@/lib/utils';
 import { domainApi } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { useUIStore } from '@/store/useUIStore';
 
 export default function ReportsPage() {
     const [isLoading, setIsLoading] = useState(true);
@@ -29,6 +30,7 @@ export default function ReportsPage() {
     const [drivers, setDrivers] = useState<any[]>([]);
     const [sessions, setSessions] = useState<any[]>([]);
     const [reports, setReports] = useState<{ id: string; name: string; date: string; rows: number }[]>([]);
+    const { dateFilterStart, dateFilterEnd } = useUIStore();
 
     useEffect(() => {
         Promise.all([
@@ -45,6 +47,14 @@ export default function ReportsPage() {
         ]).finally(() => setIsLoading(false));
     }, []);
 
+    useEffect(() => {
+        const filteredAlerts = alerts.filter((a: any) => isWithinDateRange(a.timestamp, dateFilterStart, dateFilterEnd));
+        const filteredSessions = sessions.filter((s: any) => isWithinDateRange(s.startTime, dateFilterStart, dateFilterEnd));
+        setTotalAlerts(filteredAlerts.length);
+        setResolvedAlerts(filteredAlerts.filter((x: any) => x.status === 'Resolved').length);
+        setSessionCount(filteredSessions.length);
+    }, [alerts, sessions, dateFilterStart, dateFilterEnd]);
+
     const synthesizeReport = async () => {
         setSynthesizing(true);
         try {
@@ -53,22 +63,25 @@ export default function ReportsPage() {
                 domainApi.getDrivers(),
                 domainApi.getSessions(),
             ]);
+            const scopedAlerts = latestAlerts.filter((a: any) => isWithinDateRange(a.timestamp, dateFilterStart, dateFilterEnd));
+            const scopedSessions = latestSessions.filter((s: any) => isWithinDateRange(s.startTime, dateFilterStart, dateFilterEnd));
             const now = new Date();
             const dateStr = now.toISOString().split('T')[0];
             const lines = [
                 'SafeDrive Intelligence Report',
                 `Generated: ${now.toLocaleString()}`,
+                `Range: ${getDateRangeLabel(dateFilterStart, dateFilterEnd)}`,
                 '',
                 'SUMMARY',
-                `Total Alerts: ${latestAlerts.length}`,
-                `Resolved: ${latestAlerts.filter((a: any) => a.status === 'Resolved').length}`,
-                `High Severity: ${latestAlerts.filter((a: any) => a.severity === 'High').length}`,
+                `Total Alerts: ${scopedAlerts.length}`,
+                `Resolved: ${scopedAlerts.filter((a: any) => a.status === 'Resolved').length}`,
+                `High Severity: ${scopedAlerts.filter((a: any) => a.severity === 'High').length}`,
                 `Drivers Registered: ${latestDrivers.length}`,
-                `Sessions Logged: ${latestSessions.length}`,
+                `Sessions Logged: ${scopedSessions.length}`,
                 '',
                 'ALERT DETAILS',
                 'ID,Type,Driver,Bus,Severity,Status,Alarm,Timestamp',
-                ...latestAlerts.map((a: any) =>
+                ...scopedAlerts.map((a: any) =>
                     `${a.id},${a.type},${a.driver},${a.bus},${a.severity},${a.status},${a.alarmType},${a.timestamp}`
                 ),
                 '',
@@ -80,7 +93,7 @@ export default function ReportsPage() {
                 '',
                 'SESSION DETAILS',
                 'ID,Driver,Bus,Status,Duration,Alerts,Start',
-                ...latestSessions.map((s: any) =>
+                ...scopedSessions.map((s: any) =>
                     `${s.id},${s.driver},${s.busId},${s.status},${s.duration},${s.alertCount},${s.startTime}`
                 ),
             ];
@@ -92,7 +105,7 @@ export default function ReportsPage() {
             a.download = `SafeDrive_Report_${dateStr}.csv`;
             a.click();
             URL.revokeObjectURL(url);
-            const newReport = { id: `RPT-${Date.now()}`, name: `SafeDrive Report ${dateStr}`, date: now.toLocaleString(), rows: latestAlerts.length + latestDrivers.length + latestSessions.length };
+            const newReport = { id: `RPT-${Date.now()}`, name: `SafeDrive Report ${dateStr}`, date: now.toLocaleString(), rows: scopedAlerts.length + latestDrivers.length + scopedSessions.length };
             await supabase.from('reports').insert({ id: newReport.id, name: newReport.name, date: newReport.date, rows: newReport.rows, generated_at: now.toISOString() });
             setReports(prev => [newReport, ...prev]);
         } catch (e) { console.error(e); }
@@ -130,6 +143,7 @@ export default function ReportsPage() {
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Intelligence Ledger</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Algorithmic summaries and historical operational audits.</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mt-2">Range: {getDateRangeLabel(dateFilterStart, dateFilterEnd)}</p>
                 </div>
                 <Button onClick={synthesizeReport} disabled={synthesizing} className="bg-brand-red hover:bg-brand-red/90 text-white h-11 px-6 font-bold shadow-lg shadow-brand-red/20 gap-2">
                     <Activity className="w-4 h-4" /> {synthesizing ? 'Generating...' : 'Synthesize Report'}

@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
 import { domainApi, getRuntimeConfigDiagnostics, type BusRecord, type DriverSession, type WorkHours } from '@/lib/api';
+import { useUIStore } from '@/store/useUIStore';
+import { getDateRangeLabel } from '@/lib/utils';
 
 // Dynamically import Leaflet components to avoid SSR issues
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false }) as any;
@@ -55,6 +57,7 @@ export default function LiveMonitoringPage() {
     const [refreshing, setRefreshing] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [lastKnownGps, setLastKnownGps] = useState<[number, number] | null>(null);
+    const { dateFilterStart, dateFilterEnd } = useUIStore();
 
     const loadLiveData = useCallback(async () => {
         const [busRows, sessionRows, workHourRows] = await Promise.all([
@@ -376,7 +379,7 @@ export default function LiveMonitoringPage() {
                                                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{selectedBus.sessionDuration}</span>
                                             </div>
                                             <div className="flex items-center justify-between mt-1">
-                                                <span className="text-[10px] font-bold text-slate-400">Today Total</span>
+                                                <span className="text-[10px] font-bold text-slate-400">Range Total ({getDateRangeLabel(dateFilterStart, dateFilterEnd)})</span>
                                                 <span className={`text-xs font-black ${selectedBus.todayWorkHours >= 4 ? 'text-brand-orange' : 'text-slate-700 dark:text-slate-200'}`}>{selectedBus.todayWorkHours}h</span>
                                             </div>
                                             {selectedBus.todayWorkHours >= 4 && (

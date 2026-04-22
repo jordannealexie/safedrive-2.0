@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { domainApi, type Driver } from '@/lib/api';
+import { domainApi, type Driver, type DriverSession } from '@/lib/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,23 +15,57 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, getDateRangeLabel, isWithinDateRange } from '@/lib/utils';
+import { useUIStore } from '@/store/useUIStore';
 
 export default function DriversPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [drivers, setDrivers] = useState<Driver[]>([]);
+    const [sessions, setSessions] = useState<DriverSession[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [riskFilter, setRiskFilter] = useState<string | null>(null);
     const [showFilters, setShowFilters] = useState(false);
+    const { dateFilterStart, dateFilterEnd } = useUIStore();
 
     useEffect(() => {
-        domainApi.getDrivers()
-            .then(setDrivers)
+        Promise.all([
+            domainApi.getDrivers().then(setDrivers),
+            domainApi.getSessions().then(setSessions).catch(() => setSessions([])),
+        ])
             .catch(console.error)
             .finally(() => setIsLoading(false));
     }, []);
 
-    const filteredDrivers = drivers.filter(d => {
+    const durationToHours = (duration: string | null | undefined) => {
+        if (!duration) return 0;
+        const hourMatch = duration.match(/(\d+)h/i);
+        const minMatch = duration.match(/(\d+)m/i);
+        const h = hourMatch ? parseInt(hourMatch[1], 10) : 0;
+        const m = minMatch ? parseInt(minMatch[1], 10) : 0;
+        return h + m / 60;
+    };
+
+    const rangeSessionsByDriver = new Map<string, DriverSession[]>();
+    sessions
+        .filter((s) => isWithinDateRange(s.startTime, dateFilterStart, dateFilterEnd))
+        .forEach((s) => {
+            const key = s.driverId || s.driver;
+            const list = rangeSessionsByDriver.get(key) ?? [];
+            list.push(s);
+            rangeSessionsByDriver.set(key, list);
+        });
+
+    const scopedDrivers = drivers.map((d) => {
+        const scopedSessions = rangeSessionsByDriver.get(d.id) ?? [];
+        const rangeHours = scopedSessions.reduce((acc, s) => acc + durationToHours(s.duration), 0);
+        return {
+            ...d,
+            todayWorkHours: Number(rangeHours.toFixed(2)),
+            todaySessions: scopedSessions.length,
+        };
+    });
+
+    const filteredDrivers = scopedDrivers.filter(d => {
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
             if (!d.name.toLowerCase().includes(q) && !d.id.toLowerCase().includes(q)) return false;
@@ -80,6 +114,7 @@ export default function DriversPage() {
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Driver Log</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-medium">Registry of authenticated personnel and real-time risk assessment.</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mt-2">Range: {getDateRangeLabel(dateFilterStart, dateFilterEnd)}</p>
                 </div>
             </div>
 
@@ -183,7 +218,7 @@ export default function DriversPage() {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{driver.todaySessions}</span>
-                                            <span className="text-[10px] text-slate-400 ml-1">today</span>
+                                            <span className="text-[10px] text-slate-400 ml-1">in range</span>
                                             <p className="text-[10px] text-slate-400 font-medium">{driver.totalSessions} total</p>
                                         </td>
                                         <td className="px-6 py-4">

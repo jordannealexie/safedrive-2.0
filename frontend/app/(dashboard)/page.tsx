@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     BarChart,
     Bar,
@@ -25,7 +25,7 @@ import { StatusBadge } from './components/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 import { supabase } from '@/lib/supabase';
-import { cn, formatTimestamp } from '@/lib/utils';
+import { cn, formatTimestamp, getDateRangeLabel, isWithinDateRange, parseAppTimestamp } from '@/lib/utils';
 
 import { motion } from 'framer-motion';
 
@@ -55,26 +55,101 @@ const getDetectionLabel = (type: string) => {
 
 export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
-    const { theme } = useUIStore();
+    const { theme, dateFilterStart, dateFilterEnd } = useUIStore();
     const { data: sensorData, connected } = useLiveSensor();
 
     const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+    const [alerts, setAlerts] = useState<any[]>([]);
     const [sessions, setSessions] = useState<DriverSession[]>([]);
     const [workHours, setWorkHours] = useState<WorkHours[]>([]);
     const [showAnalysis, setShowAnalysis] = useState(false);
     const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d' | 'all'>('all');
     const [analysisStats, setAnalysisStats] = useState<{ totalAlerts: number; highSeverity: number; resolvedRate: number; avgPerDay: number } | null>(null);
     const loadDomainData = useCallback(async () => {
-        const [dash, sess, wh] = await Promise.all([
+        const [dash, latestAlerts, sess, wh] = await Promise.all([
             domainApi.getDashboard().catch(() => null),
+            domainApi.getAlerts().catch(() => []),
             domainApi.getSessions().catch(() => []),
             domainApi.getWorkHours().catch(() => []),
         ]);
         if (dash) setDashboard(dash);
+        setAlerts(latestAlerts);
         setSessions(sess);
         setWorkHours(wh);
         setIsLoading(false);
     }, []);
+
+    const scopedAlerts = useMemo(
+        () => alerts.filter((a) => isWithinDateRange(a.timestamp, dateFilterStart, dateFilterEnd)),
+        [alerts, dateFilterStart, dateFilterEnd]
+    );
+
+    const scopedSessions = useMemo(
+        () => sessions.filter((s) => isWithinDateRange(s.startTime, dateFilterStart, dateFilterEnd)),
+        [sessions, dateFilterStart, dateFilterEnd]
+    );
+
+    const durationToHours = (duration: string | undefined) => {
+        if (!duration) return 0;
+        const h = duration.match(/(\d+)h/i);
+        const m = duration.match(/(\d+)m/i);
+        return (h ? parseInt(h[1], 10) : 0) + (m ? parseInt(m[1], 10) : 0) / 60;
+    };
+
+    const scopedWorkHours = useMemo(
+        () => workHours.map((wh) => {
+            const driverSessions = scopedSessions.filter((s) => s.driverId === wh.driverId);
+            const total = driverSessions.reduce((acc, s) => acc + durationToHours(s.duration), 0);
+            return {
+                ...wh,
+                todayTotal: Number(total.toFixed(2)),
+                threshold4h: total >= 4,
+                threshold8h: total >= 8,
+                reminderActive: total >= 4,
+            };
+        }),
+        [workHours, scopedSessions]
+    );
+
+    const scopedDashboard = useMemo(() => {
+        if (!dashboard) return null;
+
+        const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+        const peakBuckets: Record<number, number> = { 0: 0, 4: 0, 8: 0, 12: 0, 16: 0, 20: 0 };
+
+        scopedAlerts.forEach((a) => {
+            const dt = parseAppTimestamp(a.timestamp);
+            if (!dt) return;
+            dayCounts[(dt.getDay() + 6) % 7] += 1;
+            const bucket = Math.min(20, Math.floor(dt.getHours() / 4) * 4);
+            peakBuckets[bucket] += 1;
+        });
+
+        const drowsyCount = scopedAlerts.filter((a) => /drows|critical/i.test(a.type || '')).length;
+        const activeCount = scopedSessions.filter((s) => s.status === 'active').length;
+
+        return {
+            ...dashboard,
+            stats: (dashboard.stats || []).map((s) => {
+                if (s.label.toLowerCase().includes('drowsy')) return { ...s, value: String(drowsyCount) };
+                if (s.label.toLowerCase().includes('alert')) return { ...s, value: String(scopedAlerts.length) };
+                if (s.label.toLowerCase().includes('active session')) return { ...s, value: String(activeCount) };
+                return s;
+            }),
+            drowsinessIncidents: dayLabels.map((day, i) => ({ day, incidents: dayCounts[i] })),
+            peakHours: [0, 4, 8, 12, 16, 20].map((h) => ({ hour: `${String(h).padStart(2, '0')}:00`, incidents: peakBuckets[h] || 0 })),
+            recentAlerts: scopedAlerts.slice(0, 5).map((a) => ({
+                id: a.id,
+                type: a.type,
+                driver: a.driver,
+                time: a.timestamp,
+                status: a.status,
+                sessionId: a.sessionId,
+                alarmTriggered: a.status === 'Active' && a.alarmType !== 'none',
+            })),
+        };
+    }, [dashboard, scopedAlerts, scopedSessions]);
 
     useEffect(() => {
         loadDomainData();
@@ -121,6 +196,7 @@ export default function DashboardPage() {
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Dashboard</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">Realtime drowsiness detection and session monitoring active.</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400 mt-2">Range: {getDateRangeLabel(dateFilterStart, dateFilterEnd)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Button variant="outline" onClick={() => setShowAnalysis(!showAnalysis)} className={cn("gap-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 dark:text-slate-300", showAnalysis && "ring-2 ring-brand-red")}>
@@ -170,7 +246,7 @@ export default function DashboardPage() {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {(dashboard?.stats ?? []).map((stat, index) => (
+                {(scopedDashboard?.stats ?? []).map((stat, index) => (
                     <StatCard
                         key={stat.label}
                         {...stat}
@@ -190,7 +266,7 @@ export default function DashboardPage() {
                     delay={0.2}
                 >
                     <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={dashboard?.drowsinessIncidents ?? []}>
+                        <AreaChart data={scopedDashboard?.drowsinessIncidents ?? []}>
                             <defs>
                                 <linearGradient id="colorIncidents" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="5%" stopColor="#ED1E24" stopOpacity={0.15} />
@@ -238,7 +314,7 @@ export default function DashboardPage() {
                     delay={0.3}
                 >
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboard?.peakHours ?? []}>
+                        <BarChart data={scopedDashboard?.peakHours ?? []}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartGridColor} />
                             <XAxis
                                 dataKey="hour"
@@ -297,7 +373,7 @@ export default function DashboardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {(dashboard?.recentAlerts ?? []).slice(0, 4).map((alert) => (
+                                    {(scopedDashboard?.recentAlerts ?? []).slice(0, 4).map((alert) => (
                                         <tr key={alert.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
@@ -360,7 +436,7 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {(dashboard?.detectionFeed ?? []).map((event, i) => (
+                            {(scopedDashboard?.detectionFeed ?? []).map((event, i) => (
                                 <motion.div
                                     key={event.id}
                                     initial={{ opacity: 0, x: -10 }}
@@ -403,16 +479,16 @@ export default function DashboardPage() {
                         <CardTitle className="text-lg font-black dark:text-white">Active Sessions & Work Hours</CardTitle>
                         <div className="flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{sessions.filter(s => s.status === 'active').length} Active</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{scopedSessions.filter(s => s.status === 'active').length} Active</span>
                         </div>
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                            {workHours.map((wh, i) => {
+                            {scopedWorkHours.map((wh, i) => {
                                 const activeWorkSession = wh.sessions.find(s => s.active);
                                 const session = activeWorkSession?.id
-                                    ? sessions.find(s => s.id === activeWorkSession.id)
-                                    : sessions.find(s => s.driverId === wh.driverId && s.status === 'active');
+                                    ? scopedSessions.find(s => s.id === activeWorkSession.id)
+                                    : scopedSessions.find(s => s.driverId === wh.driverId && s.status === 'active');
                                 const percentage = Math.min((wh.todayTotal / 8) * 100, 100);
                                 return (
                                     <motion.div

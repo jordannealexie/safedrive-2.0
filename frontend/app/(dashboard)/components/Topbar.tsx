@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Bell, Search, User, LogOut, Settings as SettingsIcon, Moon, Sun, Menu, AlertTriangle, EyeOff } from 'lucide-react';
+import { Bell, Search, User, LogOut, Settings as SettingsIcon, Moon, Sun, Menu, AlertTriangle, EyeOff, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -14,10 +14,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { useUIStore } from '@/store/useUIStore';
 import { domainApi, type AlertRecord } from '@/lib/api';
-import { formatTimestamp } from '@/lib/utils';
+import { buildDateRangeFromPreset, formatTimestamp } from '@/lib/utils';
 
 export function Topbar() {
-    const { theme, toggleTheme, logout, toggleSidebar } = useUIStore();
+    const {
+        theme,
+        toggleTheme,
+        logout,
+        toggleSidebar,
+        dateFilterPreset,
+        dateFilterStart,
+        dateFilterEnd,
+        setDateFilterPreset,
+        setDateFilterRange,
+    } = useUIStore();
     const [alerts, setAlerts] = useState<AlertRecord[]>([]);
     const [lastSeenCount, setLastSeenCount] = useState(0);
 
@@ -54,6 +64,46 @@ export function Topbar() {
                     <Input
                         placeholder="Search drivers, buses, or alerts..."
                         className="pl-9 bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:bg-white dark:focus:bg-slate-900 transition-all shadow-sm rounded-xl"
+                    />
+                </div>
+                <div className="hidden lg:flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 shadow-sm">
+                    <CalendarDays className="h-4 w-4 text-slate-400" />
+                    <select
+                        value={dateFilterPreset}
+                        onChange={(e) => {
+                            const preset = e.target.value as 'all' | 'today' | '7d' | '30d' | 'custom';
+                            setDateFilterPreset(preset);
+                            if (preset !== 'custom') {
+                                const range = buildDateRangeFromPreset(preset);
+                                setDateFilterRange(range.start, range.end);
+                            }
+                        }}
+                        className="h-8 rounded-lg border-0 bg-transparent px-1 text-xs font-bold text-slate-600 outline-none dark:text-slate-300"
+                    >
+                        <option value="all">All Time</option>
+                        <option value="today">Today</option>
+                        <option value="7d">Last 7 Days</option>
+                        <option value="30d">Last 30 Days</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <Input
+                        type="date"
+                        value={dateFilterStart ?? ''}
+                        onChange={(e) => {
+                            setDateFilterPreset('custom');
+                            setDateFilterRange(e.target.value || null, dateFilterEnd);
+                        }}
+                        className="h-8 w-[130px] border-slate-200 bg-slate-50 px-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+                    />
+                    <span className="text-xs font-bold text-slate-400">to</span>
+                    <Input
+                        type="date"
+                        value={dateFilterEnd ?? ''}
+                        onChange={(e) => {
+                            setDateFilterPreset('custom');
+                            setDateFilterRange(dateFilterStart, e.target.value || null);
+                        }}
+                        className="h-8 w-[130px] border-slate-200 bg-slate-50 px-2 text-xs dark:border-slate-700 dark:bg-slate-800"
                     />
                 </div>
             </div>
