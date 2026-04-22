@@ -957,3 +957,57 @@ export const settingsApi = {
             body: JSON.stringify(data),
         }),
 };
+
+// ---------------------------------------------------------------------------
+// Snapshot API (reads directly from Supabase — no Pi backend needed)
+// ---------------------------------------------------------------------------
+
+export interface PrototypeSnapshot {
+    id: string;
+    driver_id: string;
+    session_id: string | null;
+    captured_at: string;
+    ear_value: number | null;
+    drowsiness_state: string | null;
+    is_moving: boolean;
+    speed_kmh: number | null;
+    gps_lat: number | null;
+    gps_lon: number | null;
+    fps: number | null;
+    image_url: string | null;
+    source: string;       // 'live' | 'backfill'
+    raw_payload: Record<string, unknown> | null;
+    created_at: string;
+}
+
+export const snapshotApi = {
+    getLatestByDriver: async (driverId: string): Promise<PrototypeSnapshot | null> => {
+        const { data, error } = await supabase
+            .from('latest_driver_snapshot')
+            .select('*')
+            .eq('driver_id', driverId)
+            .maybeSingle();
+        if (error) throw error;
+        return data as PrototypeSnapshot | null;
+    },
+    getByDriver: async (driverId: string, limit = 50): Promise<PrototypeSnapshot[]> => {
+        const { data, error } = await supabase
+            .from('prototype_snapshots')
+            .select('*')
+            .eq('driver_id', driverId)
+            .order('captured_at', { ascending: false })
+            .limit(limit);
+        if (error) throw error;
+        return (data || []) as PrototypeSnapshot[];
+    },
+    getBySession: async (sessionId: string, limit = 200): Promise<PrototypeSnapshot[]> => {
+        const { data, error } = await supabase
+            .from('prototype_snapshots')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('captured_at', { ascending: false })
+            .limit(limit);
+        if (error) throw error;
+        return (data || []) as PrototypeSnapshot[];
+    },
+};

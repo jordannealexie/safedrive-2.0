@@ -81,6 +81,13 @@ _events_by_hour: dict[int, int] = {}
 # Drowsiness events by weekday (0=Mon → count)
 _events_by_day: dict[int, int] = {}
 
+# Snapshot throttle: driver_id → last capture timestamp
+_snapshot_last_ts: dict[str, float] = {}
+SNAPSHOT_INTERVAL_SECONDS = 5
+
+# Offline snapshot queue file
+_SNAPSHOT_QUEUE_FILE = Path("/tmp/snapshot_queue.json")
+
 
 # ---------------------------------------------------------------------------
 # Supabase sync helpers
@@ -177,6 +184,65 @@ def _sb_upsert_event_stat(stat_type: str, stat_key: int, count: int):
         ).execute()
     except Exception as e:
         _log.warning("Supabase event_stats upsert failed: %s", e)
+
+
+def _sb_upsert_snapshot(snapshot: dict):
+    """Upsert a prototype snapshot to Supabase. Queue locally on failure."""
+    if not _sb:
+        _queue_snapshot(snapshot)
+        return
+    try:
+        _sb.table("prototype_snapshots").upsert(
+            snapshot,
+            on_conflict="driver_id,captured_at"
+        ).execute()
+    except Exception as e:
+        _log.warning("Supabase snapshot upsert failed: %s", e)
+        _queue_snapshot(snapshot)
+
+
+def _queue_snapshot(snapshot: dict):
+    """Persist a failed snapshot to local queue for later retry."""
+    try:
+        queue = []
+        if _SNAPSHOT_QUEUE_FILE.exists():
+            queue = json.loads(_SNAPSHOT_QUEUE_FILE.read_text())
+        queue.append(snapshot)
+        # Cap queue to prevent disk bloat
+        if len(queue) > 5000:
+            queue = queue[-5000:]
+        _SNAPSHOT_QUEUE_FILE.write_text(json.dumps(queue))
+    except Exception as e:
+        _log.warning("Failed to queue snapshot locally: %s", e)
+
+
+def _flush_snapshot_queue():
+    """Retry sending queued snapshots to Supabase."""
+    if not _sb or not _SNAPSHOT_QUEUE_FILE.exists():
+        return
+    try:
+        queue = json.loads(_SNAPSHOT_QUEUE_FILE.read_text())
+        if not queue:
+            return
+        _log.info("Flushing %d queued snapshots to Supabase", len(queue))
+        batch_size = 50
+        remaining = []
+        for i in range(0, len(queue), batch_size):
+            batch = queue[i:i + batch_size]
+            try:
+                _sb.table("prototype_snapshots").upsert(
+                    batch,
+                    on_conflict="driver_id,captured_at"
+                ).execute()
+            except Exception:
+                remaining.extend(batch)
+        if remaining:
+            _SNAPSHOT_QUEUE_FILE.write_text(json.dumps(remaining))
+        else:
+            _SNAPSHOT_QUEUE_FILE.unlink(missing_ok=True)
+            _log.info("Snapshot queue fully flushed")
+    except Exception as e:
+        _log.warning("Failed to flush snapshot queue: %s", e)
 
 
 def _load_from_supabase():
@@ -282,10 +348,14 @@ def _load_from_supabase():
 # Load persisted data on import
 _load_from_supabase()
 
+# Flush any queued snapshots from previous offline periods
+threading.Thread(target=_flush_snapshot_queue, daemon=True).start()
+
 
 def _poll_state():
     """Background thread: poll the safedrive_ai state file."""
     global _prev_state, _session_counter
+    _poll_counter = 0
 
     while True:
         try:
@@ -294,6 +364,13 @@ def _poll_state():
                 _process_state(data)
         except Exception:
             pass
+        # Periodically flush queued snapshots (every ~60s)
+        _poll_counter += 1
+        if _poll_counter % 60 == 0:
+            try:
+                _flush_snapshot_queue()
+            except Exception:
+                pass
         time.sleep(1)
 
 
@@ -440,8 +517,31 @@ def _process_state(data: dict):
 
     _prev_state = dict(data)
 
+    # --- Capture prototype snapshot (throttled) ---
+    sync_snapshot = None
+    if current_driver and current_driver != "UNKNOWN":
+        last_snap = _snapshot_last_ts.get(current_driver, 0)
+        if now_ts - last_snap >= SNAPSHOT_INTERVAL_SECONDS:
+            _snapshot_last_ts[current_driver] = now_ts
+            sync_snapshot = {
+                "driver_id": current_driver,
+                "session_id": _active_sessions.get(current_driver, {}).get("id"),
+                "captured_at": now.isoformat(),
+                "ear_value": ear,
+                "drowsiness_state": state,
+                "is_moving": is_moving,
+                "speed_kmh": data.get("speed_kmh"),
+                "gps_lat": data.get("gps_lat") or data.get("latitude"),
+                "gps_lon": data.get("gps_lon") or data.get("longitude"),
+                "fps": data.get("fps"),
+                "image_url": None,
+                "source": "live",
+                "pi_hostname": "raspi4b",
+                "raw_payload": data,
+            }
+
     # Sync to Supabase in background thread (non-blocking)
-    if sync_driver or sync_alert or sync_alert_updates or sync_session or sync_session_ends or sync_events:
+    if sync_driver or sync_alert or sync_alert_updates or sync_session or sync_session_ends or sync_events or sync_snapshot:
         def _do_sync():
             if sync_driver:
                 _sb_upsert_driver(sync_driver)
@@ -455,6 +555,8 @@ def _process_state(data: dict):
                 _sb_upsert_session(ended_sess)
             for st, sk, sc in sync_events:
                 _sb_upsert_event_stat(st, sk, sc)
+            if sync_snapshot:
+                _sb_upsert_snapshot(sync_snapshot)
         threading.Thread(target=_do_sync, daemon=True).start()
 
 
