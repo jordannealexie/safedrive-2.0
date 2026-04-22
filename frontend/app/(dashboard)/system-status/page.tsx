@@ -19,23 +19,33 @@ import {
     AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { sensorApi, type SystemStatus } from '@/lib/api';
+import { getRuntimeConfigDiagnostics, sensorApi, type SystemStatus } from '@/lib/api';
 import { useLiveSensor } from '@/hooks/useLiveSensor';
 
 export default function SystemStatusPage() {
     const { data: sensorData, connected } = useLiveSensor();
     const [health, setHealth] = useState<{ status: string; mock_mode: boolean } | null>(null);
+    const runtimeDiag = getRuntimeConfigDiagnostics();
 
     useEffect(() => {
-        sensorApi.getHealth().then(setHealth).catch(console.error);
+        const fetchHealth = () => {
+            sensorApi.getHealth().then(setHealth).catch(() => setHealth(null));
+        };
+        fetchHealth();
+        const interval = setInterval(fetchHealth, 10000);
+        return () => clearInterval(interval);
     }, []);
 
+    const backendReachable = health?.status === 'ok';
+    // System is live if WebSocket is connected OR backend health check passes
+    const liveConnected = connected || backendReachable;
+
     const devices = [
-        { id: 'CAM-01-UNIT-A', type: 'Camera Module', status: connected ? 'Online' : 'Offline', firmware: 'v2.1.0', lastSeen: connected ? 'Just now' : 'Disconnected', detail: 'Facial landmark detection active' },
-        { id: 'NEO6M-01-UNIT-A', type: 'NEO-6M GPS', status: connected ? 'Online' : 'Offline', firmware: 'v1.4.5', lastSeen: connected ? 'Just now' : 'Disconnected', detail: sensorData?.gps ? (sensorData.gps.fix ? `Lat ${sensorData.gps.latitude?.toFixed(4) ?? 'N/A'}, Lon ${sensorData.gps.longitude?.toFixed(4) ?? 'N/A'}, ${sensorData.gps.speed_kmh?.toFixed(0) ?? 0} km/h` : 'Searching for satellites…') : 'Awaiting data' },
-        { id: 'MPU6050-01-UNIT-A', type: 'MPU-6050 Accelerometer', status: connected ? 'Online' : 'Offline', firmware: 'v1.2.0', lastSeen: connected ? 'Just now' : 'Disconnected', detail: sensorData?.accelerometer ? `Mag: ${sensorData.accelerometer.magnitude.toFixed(3)}g, ${sensorData.is_moving ? 'Moving' : 'Stationary'}` : 'Awaiting data' },
-        { id: 'OLED-01-UNIT-A', type: 'OLED Display', status: connected ? 'Online' : 'Offline', firmware: 'v1.0.3', lastSeen: connected ? 'Just now' : 'Disconnected', detail: sensorData?.oled?.raw ? `EAR: ${(sensorData.oled.raw.ear_value as number ?? 0).toFixed(3)} | ${sensorData.oled.raw.drowsiness_state}` : 'Awaiting data' },
-        { id: 'BZR-01-UNIT-A', type: 'Buzzer Module', status: connected ? 'Online' : 'Offline', firmware: 'v1.0.0', lastSeen: connected ? 'Just now' : 'Disconnected', detail: sensorData?.buzzer?.active ? 'BUZZER ACTIVE' : 'Audio alarm standby' },
+        { id: 'CAM-01-UNIT-A', type: 'Camera Module', status: liveConnected ? 'Online' : 'Offline', firmware: 'v2.1.0', lastSeen: liveConnected ? 'Just now' : 'Disconnected', detail: 'Facial landmark detection active' },
+        { id: 'NEO6M-01-UNIT-A', type: 'NEO-6M GPS', status: liveConnected ? 'Online' : 'Offline', firmware: 'v1.4.5', lastSeen: liveConnected ? 'Just now' : 'Disconnected', detail: sensorData?.gps ? (sensorData.gps.fix ? `Lat ${sensorData.gps.latitude?.toFixed(4) ?? 'N/A'}, Lon ${sensorData.gps.longitude?.toFixed(4) ?? 'N/A'}, ${sensorData.gps.speed_kmh?.toFixed(0) ?? 0} km/h` : 'Searching for satellites…') : 'Awaiting data' },
+        { id: 'MPU6050-01-UNIT-A', type: 'MPU-6050 Accelerometer', status: liveConnected ? 'Online' : 'Offline', firmware: 'v1.2.0', lastSeen: liveConnected ? 'Just now' : 'Disconnected', detail: sensorData?.accelerometer ? `Mag: ${sensorData.accelerometer.magnitude.toFixed(3)}g, ${sensorData.is_moving ? 'Moving' : 'Stationary'}` : 'Awaiting data' },
+        { id: 'OLED-01-UNIT-A', type: 'OLED Display', status: liveConnected ? 'Online' : 'Offline', firmware: 'v1.0.3', lastSeen: liveConnected ? 'Just now' : 'Disconnected', detail: sensorData?.oled?.raw ? `EAR: ${(sensorData.oled.raw.ear_value as number ?? 0).toFixed(3)} | ${sensorData.oled.raw.drowsiness_state}` : 'Awaiting data' },
+        { id: 'BZR-01-UNIT-A', type: 'Buzzer Module', status: liveConnected ? 'Online' : 'Offline', firmware: 'v1.0.0', lastSeen: liveConnected ? 'Just now' : 'Disconnected', detail: sensorData?.buzzer?.active ? 'BUZZER ACTIVE' : 'Audio alarm standby' },
     ];
 
     const onlineCount = devices.filter(d => d.status === 'Online').length;
@@ -49,6 +59,7 @@ export default function SystemStatusPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-8">
+
                     <Card className="border-none shadow-sm bg-white dark:bg-slate-900 overflow-hidden ring-1 ring-slate-200 dark:ring-slate-800">
                         <CardHeader className="bg-slate-50/50 dark:bg-slate-800/20 border-b dark:border-slate-800">
                             <div className="flex items-center justify-between">
@@ -109,17 +120,20 @@ export default function SystemStatusPage() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             {[
-                                { label: 'Detection Engine', status: connected ? 'Operational' : 'Offline', latency: sensorData?.oled?.raw ? `${(sensorData.oled.raw.fps as number ?? 0).toFixed(0)} FPS` : '—' },
-                                { label: 'FastAPI Backend', status: connected ? 'Operational' : 'Offline', latency: connected ? 'Connected' : '—' },
-                                { label: 'WebSocket Stream', status: connected ? 'Operational' : 'Offline', latency: connected ? 'Live' : '—' },
-                                { label: 'safedrive_ai Service', status: sensorData?.oled?.raw ? 'Operational' : 'Offline', latency: sensorData?.oled?.raw ? 'Running' : '—' },
+                                { label: 'Detection Engine', status: liveConnected ? 'Operational' : 'Offline', latency: sensorData?.oled?.raw ? `${(sensorData.oled.raw.fps as number ?? 0).toFixed(0)} FPS` : '—' },
+                                { label: 'FastAPI Backend', status: backendReachable ? 'Operational' : 'Offline', latency: backendReachable ? 'Connected' : '—' },
+                                { label: 'WebSocket Stream', status: liveConnected ? 'Operational' : 'Offline', latency: liveConnected ? 'Live' : '—' },
+                                { label: 'safedrive_ai Service', status: liveConnected && sensorData?.oled?.raw ? 'Operational' : 'Offline', latency: liveConnected && sensorData?.oled?.raw ? 'Running' : '—' },
                             ].map((service) => (
                                 <div key={service.label} className="flex items-center justify-between border-b border-white/10 pb-4 last:border-0 last:pb-0">
                                     <div>
                                         <p className="font-bold text-sm tracking-tight">{service.label}</p>
                                         <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{service.latency}</p>
                                     </div>
-                                    <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">{service.status}</p>
+                                    <p className={cn(
+                                        "text-[10px] font-bold uppercase tracking-widest",
+                                        service.status === 'Operational' ? 'text-emerald-400' : 'text-slate-400'
+                                    )}>{service.status}</p>
                                 </div>
                             ))}
                         </CardContent>
@@ -168,9 +182,9 @@ export default function SystemStatusPage() {
                         </CardTitle>
                         <Badge variant="outline" className={cn(
                             "font-bold uppercase tracking-widest text-[10px]",
-                            connected ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20" : "text-slate-400 border-slate-200 dark:border-slate-700"
+                            liveConnected ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20" : "text-slate-400 border-slate-200 dark:border-slate-700"
                         )}>
-                            {connected ? 'Live' : 'Offline'}
+                            {liveConnected ? 'Live' : 'Offline'}
                         </Badge>
                     </div>
                 </CardHeader>

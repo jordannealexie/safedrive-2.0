@@ -28,9 +28,9 @@ function deriveWsUrl(rawWsUrl: string, apiUrl: string): string {
     return wsUrl;
 }
 
-// Allow localhost convenience only in development. In production, force explicit config.
-const API_URL = normalizeApiUrl(RAW_API_URL || (IS_DEV ? 'http://localhost:8000' : ''));
-const WS_URL = deriveWsUrl(RAW_WS_URL || (IS_DEV ? 'ws://localhost:8000' : ''), API_URL);
+// Require explicit endpoint configuration so status cannot silently bind to localhost.
+const API_URL = normalizeApiUrl(RAW_API_URL);
+const WS_URL = deriveWsUrl(RAW_WS_URL, API_URL);
 const DEFAULT_CACHE_TTL_MS = 8000;
 const DELETED_ALERT_IDS_KEY = 'safedrive_deleted_alert_ids';
 
@@ -216,6 +216,7 @@ export function getRuntimeConfigDiagnostics() {
         apiUrl: API_URL,
         wsUrl: WS_URL,
         isDev: IS_DEV,
+        isLocalhostTarget: isLocalHostUrl(API_URL || WS_URL),
         issues,
         ok: issues.length === 0,
     };

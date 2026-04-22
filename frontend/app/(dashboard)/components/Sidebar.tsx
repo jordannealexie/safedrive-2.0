@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
@@ -18,6 +19,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/store/useUIStore';
 import { Button } from '@/components/ui/button';
+import { getRuntimeConfigDiagnostics, sensorApi } from '@/lib/api';
 
 const NAV_ITEMS = [
     { label: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -32,6 +34,14 @@ const NAV_ITEMS = [
 export function Sidebar() {
     const pathname = usePathname();
     const { isSidebarOpen, toggleSidebar, setSidebarOpen } = useUIStore();
+    const [health, setHealth] = useState<{ status: string; mock_mode: boolean } | null>(null);
+    const runtimeDiag = getRuntimeConfigDiagnostics();
+
+    useEffect(() => {
+        sensorApi.getHealth().then(setHealth).catch(() => setHealth(null));
+    }, []);
+
+    const piConnected = health?.status === 'ok' && !health?.mock_mode && !runtimeDiag.isLocalhostTarget;
 
     return (
         <>
@@ -123,8 +133,11 @@ export function Sidebar() {
                             <div className="flex flex-col gap-1">
                                 <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em]">Node Status</p>
                                 <p className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                    Operational
+                                    <span className={cn(
+                                        "w-2 h-2 rounded-full",
+                                        piConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                                    )} />
+                                    {piConnected ? 'Connected to Pi' : 'Pi Offline'}
                                 </p>
                             </div>
                         </div>
