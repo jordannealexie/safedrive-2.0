@@ -559,16 +559,34 @@ function buildPeakHours(alerts: AlertRecord[]): PeakHourPoint[] {
     }));
 }
 
+function formatSessionDuration(startTime: string, endTime: string | null, status: string): string {
+    const start = parseAlertTimestamp(startTime);
+    if (!start) return '';
+
+    const parsedEnd = endTime ? parseAlertTimestamp(endTime) : null;
+    const end = parsedEnd ?? (status === 'active' ? new Date() : null);
+    if (!end || end < start) return '';
+
+    const totalMinutes = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
 function mapSessionRow(r: Record<string, unknown>): DriverSession {
+    const startTime = (r.start_time as string) || '';
+    const endTime = (r.end_time as string) || null;
+    const status = (r.status as string) || 'completed';
+
     return {
         id: r.id as string,
         driverId: r.driver_id as string,
         driver: (r.driver as string) || '',
         busId: (r.bus_id as string) || 'BUS-001',
-        startTime: (r.start_time as string) || '',
-        endTime: (r.end_time as string) || null,
-        duration: '',
-        status: (r.status as string) || 'completed',
+        startTime,
+        endTime,
+        duration: formatSessionDuration(startTime, endTime, status),
+        status,
         alertCount: (r.alert_count as number) || 0,
         baselineStatus: 'learned',
         baselineConfidence: 80,
