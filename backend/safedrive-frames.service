@@ -1,0 +1,16 @@
+[Unit]
+Description=SafeDrive Camera Frame Capture
+After=network.target safedrive-api.service
+Wants=safedrive-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/raspi4b/SafeDrive/backend
+ExecStart=/home/raspi4b/SafeDrive/venv/bin/python frame_capture.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

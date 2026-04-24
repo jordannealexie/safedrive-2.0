@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException
 router = APIRouter(prefix="/api", tags=["Domain"])
 
 STATE_FILE = Path("/tmp/safedrive_oled_state.json")
+FRAME_FILE = Path("/tmp/safedrive_frame.jpg")
 
 # Philippine Standard Time (UTC+8)
 PHT = timezone(timedelta(hours=8))
@@ -199,6 +200,38 @@ def _sb_upsert_snapshot(snapshot: dict):
     except Exception as e:
         _log.warning("Supabase snapshot upsert failed: %s", e)
         _queue_snapshot(snapshot)
+
+
+def _sb_upload_frame(driver_id: str, timestamp_str: str) -> str | None:
+    """Upload the current camera frame to Supabase Storage and return its public URL."""
+    if not _sb:
+        return None
+    if not FRAME_FILE.exists():
+        return None
+    try:
+        frame_data = FRAME_FILE.read_bytes()
+        if len(frame_data) < 1000:  # Too small = corrupt
+            return None
+
+        # Build a unique path: frames/{driver_id}/{YYYYMMDD}/{timestamp}.jpg
+        ts = datetime.now(PHT)
+        date_folder = ts.strftime("%Y%m%d")
+        safe_ts = ts.strftime("%H%M%S_%f")[:-3]  # HHMMss_mmm
+        storage_path = f"frames/{driver_id}/{date_folder}/{safe_ts}.jpg"
+
+        # Upload to Supabase Storage
+        _sb.storage.from_("snapshot-frames").upload(
+            path=storage_path,
+            file=frame_data,
+            file_options={"content-type": "image/jpeg", "upsert": "true"}
+        )
+
+        # Build public URL
+        public_url = f"{_SUPABASE_URL}/storage/v1/object/public/snapshot-frames/{storage_path}"
+        return public_url
+    except Exception as e:
+        _log.warning("Frame upload failed: %s", e)
+        return None
 
 
 def _queue_snapshot(snapshot: dict):
@@ -534,7 +567,7 @@ def _process_state(data: dict):
                 "gps_lat": data.get("gps_lat") or data.get("latitude"),
                 "gps_lon": data.get("gps_lon") or data.get("longitude"),
                 "fps": data.get("fps"),
-                "image_url": None,
+                "image_url": None,  # Will be filled by _do_sync
                 "source": "live",
                 "pi_hostname": "raspi4b",
                 "raw_payload": data,
@@ -556,6 +589,13 @@ def _process_state(data: dict):
             for st, sk, sc in sync_events:
                 _sb_upsert_event_stat(st, sk, sc)
             if sync_snapshot:
+                # Upload frame image if available
+                frame_url = _sb_upload_frame(
+                    sync_snapshot["driver_id"],
+                    sync_snapshot["captured_at"]
+                )
+                if frame_url:
+                    sync_snapshot["image_url"] = frame_url
                 _sb_upsert_snapshot(sync_snapshot)
         threading.Thread(target=_do_sync, daemon=True).start()
 
